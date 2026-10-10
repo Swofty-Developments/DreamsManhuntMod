@@ -25,6 +25,7 @@ import net.minecraft.server.players.PlayerList;
 import net.minecraft.util.ProblemReporter;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityEvent;
+import net.minecraft.world.entity.PositionMoveRotation;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.level.storage.LevelData;
@@ -43,6 +44,7 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
@@ -167,7 +169,7 @@ final class PlayerRestorer {
 
 			LevelData levelData = level.getLevelData();
 			connection.send(new ClientboundRespawnPacket(player.createCommonSpawnInfo(level), (byte) 0));
-			connection.teleport(player.getX(), player.getY(), player.getZ(), player.getYRot(), player.getXRot());
+			connection.teleport(new PositionMoveRotation(player.position(), player.getDeltaMovement(), player.getYRot(), player.getXRot()), Set.of());
 			connection.resetPosition();
 			((ServerGamePacketListenerImplInvoker) connection).dreammanhunt$restartClientLoadTimerAfterRespawn();
 			connection.send(new ClientboundSetDefaultSpawnPositionPacket(level.getRespawnData()));
