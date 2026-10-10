@@ -12,6 +12,7 @@ import javax.imageio.ImageIO;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
+import net.minecraft.client.CloudStatus;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.toasts.SystemToast;
 import net.minecraft.network.chat.Component;
@@ -25,22 +26,28 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerPlayer;
 import net.swofty.dreammanhunt.client.state.ClientSnapshot;
+import net.swofty.dreammanhunt.client.mixin.state.MinecraftAccessor;
 import net.swofty.dreammanhunt.client.state.ClientStateManager;
+import net.swofty.dreammanhunt.client.state.VisualClock;
 
 public final class ClientStateGameTest implements FabricClientGameTest {
 	private static final String STATE_ID = "clientstate-gametest";
 	private static final int[] FRAME_OFFSETS = {0, 3, 6, 9, 13, 20, 40};
-	private static final List<String> VOLATILE_KEYS = List.of("visualNanos");
+	private static final List<String> VOLATILE_KEYS = List.of("visualNanos", "LocalPlayer.positionReminder");
 
 	@Override
 	public void runTest(ClientGameTestContext context) {
 		if (!TestFilter.enabled("clientstate")) {
 			return;
 		}
+		context.runOnClient(mc -> VisualClock.useBaseSource(() -> ((MinecraftAccessor) mc).dm$getClientTickCount() * 50_000_000L));
 		try (TestSingleplayerContext singleplayer = context.worldBuilder().create()) {
 			for (int round = 1; round <= 2; round++) {
 				runRound(context, singleplayer, round);
 			}
+			runMotionRound(context, singleplayer);
+		} finally {
+			context.runOnClient(mc -> VisualClock.useBaseSource(net.minecraft.util.Util::getNanos));
 		}
 	}
 
@@ -234,6 +241,129 @@ public final class ClientStateGameTest implements FabricClientGameTest {
 			}
 		}
 		return count;
+	}
+
+	private void runMotionRound(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
+		String id = STATE_ID + "-motion";
+		singleplayer.getServer().runCommand("tick unfreeze");
+		singleplayer.getServer().runCommand("gamerule advance_time false");
+		singleplayer.getServer().runCommand("time set 6000");
+		singleplayer.getServer().runCommand("weather clear");
+		singleplayer.getServer().runCommand("kill @e[type=!minecraft:player]");
+		singleplayer.getServer().runCommand("clear @a");
+		singleplayer.getServer().runCommand("give @a minecraft:enchanted_golden_apple 3");
+		context.runOnClient(mc -> {
+			mc.particleEngine.clearParticles();
+			mc.gui.toastManager().clear();
+			mc.gui.hud.getChat().clearMessages(false);
+			mc.options.cloudStatus().set(CloudStatus.OFF);
+			mc.player.getInventory().setSelectedSlot(0);
+		});
+		setStats(singleplayer, 20.0F, 20, 20.0F);
+		double[] start = singleplayer.getServer().computeOnServer(server -> {
+			ServerPlayer player = server.getPlayerList().getPlayers().getFirst();
+			return new double[]{Math.floor(player.getX()) + 0.5, player.getY(), Math.floor(player.getZ()) + 0.5};
+		});
+		singleplayer.getServer().runCommand(String.format(java.util.Locale.ROOT, "fill %d %d %d %d %d %d minecraft:air", (int) start[0] - 9, (int) Math.floor(start[1]), (int) start[2] - 3, (int) start[0] + 9, (int) Math.floor(start[1]) + 2, (int) start[2] + 20));
+		singleplayer.getServer().runCommand(String.format(java.util.Locale.ROOT, "setblock %d %d %d minecraft:water", (int) Math.floor(start[0]), (int) Math.floor(start[1]), (int) Math.floor(start[2]) + 6));
+		teleport(singleplayer, start[0], start[1], start[2] - 2.0, 0.0F, 15.0F);
+		context.waitTicks(80);
+
+		holdMotionKeys(context, true);
+		context.waitTicks(6);
+		for (int i = 0; i < 60 && !context.computeOnClient(mc -> mc.player.isInWater() && mc.player.getDeltaMovement().horizontalDistance() > 0.05); i++) {
+			context.waitTick();
+		}
+		CompoundTag[] captured = new CompoundTag[1];
+		context.runOnClient(mc -> {
+			ClientStateManager.get().capturePending();
+			ClientStateManager.get().onCapture(id);
+			captured[0] = ClientStateManager.get().snapshot(id);
+		});
+		String motionState = context.computeOnClient(mc -> String.format(java.util.Locale.ROOT, "pos=%s delta=%s inWater=%s sprinting=%s onGround=%s",
+			mc.player.position(), mc.player.getDeltaMovement(), mc.player.isInWater(), mc.player.isSprinting(), mc.player.onGround()));
+		System.out.println("[clientstate] motion at capture: " + motionState);
+		boolean moving = context.computeOnClient(mc -> mc.player.getDeltaMovement().horizontalDistance() > 0.05 && mc.player.isInWater());
+		if (!moving) {
+			context.takeScreenshot("motion-debug-capture");
+			throw new AssertionError("Motion scene did not capture a moving player in water: " + motionState);
+		}
+		List<Path> afterCapture = new ArrayList<>();
+		List<Integer> captureTicks = new ArrayList<>();
+		recordFrames(context, "motion-capture", afterCapture, captureTicks);
+		holdMotionKeys(context, false);
+
+		teleport(singleplayer, start[0] + 3.0, start[1], start[2] + 12.0, 90.0F, 0.0F);
+		context.waitTicks(40);
+
+		CompoundTag motion = captured[0].getCompoundOrEmpty("player").getCompoundOrEmpty("motion").getCompoundOrEmpty("primitives");
+		teleport(singleplayer, motion.getDoubleOr("LocalPlayer.xLast", 0.0), motion.getDoubleOr("LocalPlayer.yLast", 0.0), motion.getDoubleOr("LocalPlayer.zLast", 0.0),
+			motion.getFloatOr("LocalPlayer.yRotLast", 0.0F), motion.getFloatOr("LocalPlayer.xRotLast", 0.0F));
+		setStats(singleplayer, 20.0F, 20, 20.0F);
+		context.waitTicks(5);
+		holdMotionKeys(context, true);
+		AtomicBoolean ready = new AtomicBoolean();
+		context.runOnClient(mc -> {
+			ClientStateManager.get().onRestoreBegin(id);
+			ClientStateManager.get().onRestoreApply(id, () -> ready.set(true));
+		});
+		context.waitFor(mc -> ready.get(), 20 * 20);
+		context.waitTicks(5);
+		context.runOnClient(mc -> ClientStateManager.get().onRestoreResume(id));
+		List<Path> afterResume = new ArrayList<>();
+		List<Integer> resumeTicks = new ArrayList<>();
+		recordFrames(context, "motion-resume", afterResume, resumeTicks);
+		holdMotionKeys(context, false);
+		context.waitTicks(30);
+		double[] serverPos = singleplayer.getServer().computeOnServer(server -> {
+			ServerPlayer player = server.getPlayerList().getPlayers().getFirst();
+			return new double[]{player.getX(), player.getY(), player.getZ()};
+		});
+		double[] clientPos = context.computeOnClient(mc -> new double[]{mc.player.getX(), mc.player.getY(), mc.player.getZ()});
+		double gap = Math.sqrt(Math.pow(serverPos[0] - clientPos[0], 2) + Math.pow(serverPos[1] - clientPos[1], 2) + Math.pow(serverPos[2] - clientPos[2], 2));
+		System.out.printf("[clientstate] motion: server and client positions differ by %.4f blocks after resume%n", gap);
+		if (gap > 0.25) {
+			throw new AssertionError("Server did not follow the restored client position: " + java.util.Arrays.toString(serverPos) + " vs " + java.util.Arrays.toString(clientPos));
+		}
+		if (!captureTicks.equals(resumeTicks)) {
+			throw new AssertionError("Hud.tickCount sequence differs: " + captureTicks + " vs " + resumeTicks);
+		}
+		for (int i = 0; i < afterCapture.size(); i++) {
+			compare(afterCapture.get(i), afterResume.get(i));
+		}
+		singleplayer.getServer().runCommand("gamerule advance_time true");
+		context.runOnClient(mc -> ClientStateManager.get().delete(id));
+	}
+
+	private static void holdMotionKeys(ClientGameTestContext context, boolean hold) {
+		if (hold) {
+			context.getInput().holdKey(options -> options.keyUp);
+			context.getInput().holdKey(options -> options.keySprint);
+			context.getInput().holdKey(options -> options.keyJump);
+		} else {
+			context.getInput().releaseKey(options -> options.keyUp);
+			context.getInput().releaseKey(options -> options.keySprint);
+			context.getInput().releaseKey(options -> options.keyJump);
+		}
+	}
+
+	private static void teleport(TestSingleplayerContext singleplayer, double x, double y, double z, float yRot, float xRot) {
+		singleplayer.getServer().runOnServer(server -> {
+			for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+				player.setDeltaMovement(net.minecraft.world.phys.Vec3.ZERO);
+				player.connection.teleport(x, y, z, yRot, xRot);
+			}
+		});
+	}
+
+	private static void setStats(TestSingleplayerContext singleplayer, float health, int food, float saturation) {
+		singleplayer.getServer().runOnServer(server -> {
+			for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+				player.setHealth(health);
+				player.getFoodData().setFoodLevel(food);
+				player.getFoodData().setSaturation(saturation);
+			}
+		});
 	}
 
 	private static void setSurvivalStats(TestSingleplayerContext singleplayer, float health, int food) {

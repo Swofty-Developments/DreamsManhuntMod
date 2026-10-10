@@ -3,6 +3,7 @@
 	"package": "net.swofty.dreammanhunt.client.mixin.state",
 	"compatibilityLevel": "JAVA_25",
 	"client": [
+		"ActiveTextCollectorMixin",
 		"CameraAccessor",
 		"ChatComponentAccessor",
 		"ClientAvatarStateAccessor",
@@ -20,6 +21,7 @@
 		"LevelAccessor",
 		"LightmapExtractorAccessor",
 		"LivingEntityAccessor",
+		"LoadingDotsTextMixin",
 		"LocalPlayerAccessor",
 		"MinecraftAccessor",
 		"MinecraftMixin",

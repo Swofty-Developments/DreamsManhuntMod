@@ -117,6 +117,7 @@ public final class ClientSnapshot {
 
 	public static void resume(Minecraft minecraft, CompoundTag root) {
 		apply(minecraft, root);
+		PlayerMotionState.syncServer(minecraft.player);
 		applyTextures(minecraft, root.getCompoundOrEmpty("textures"));
 		for (KeyMapping key : minecraft.options.keyMappings) {
 			while (key.consumeClick()) {
@@ -266,6 +267,13 @@ public final class ClientSnapshot {
 				state.dm$setSubFrame(frames[i * 2 + 1]);
 				state.dm$setDirty(true);
 			}
+			try {
+				java.lang.reflect.Method upload = TextureAtlas.class.getDeclaredMethod("uploadAnimationFrames");
+				upload.setAccessible(true);
+				upload.invoke(atlas);
+			} catch (ReflectiveOperationException e) {
+				throw new IllegalStateException(e);
+			}
 		}
 	}
 
@@ -390,6 +398,7 @@ public final class ClientSnapshot {
 		tag.putFloat("activationOffX", activation.dm$getOffX());
 		tag.putFloat("activationOffY", activation.dm$getOffY());
 		tag.put("elytra", EntityAnimations.captureElytra(player));
+		tag.put("motion", PlayerMotionState.capture(player));
 		return tag;
 	}
 
@@ -402,10 +411,12 @@ public final class ClientSnapshot {
 		double x = tag.getDoubleOr("x", player.getX());
 		double y = tag.getDoubleOr("y", player.getY());
 		double z = tag.getDoubleOr("z", player.getZ());
-		boolean samePlace = Math.abs(player.getX() - x) < SAME_POSITION_EPSILON
-			&& Math.abs(player.getY() - y) < SAME_POSITION_EPSILON
-			&& Math.abs(player.getZ() - z) < SAME_POSITION_EPSILON;
-		if (samePlace) {
+		CompoundTag motion = tag.getCompoundOrEmpty("motion");
+		PlayerMotionState.apply(player, motion);
+		boolean samePlace = motion.isEmpty()
+			? Math.abs(player.getX() - x) < SAME_POSITION_EPSILON && Math.abs(player.getY() - y) < SAME_POSITION_EPSILON && Math.abs(player.getZ() - z) < SAME_POSITION_EPSILON
+			: player.level().dimension().identifier().toString().equals(motion.getStringOr("dimension", ""));
+		if (samePlace && motion.isEmpty()) {
 			player.setPosRaw(x, y, z);
 			player.xo = tag.getDoubleOr("xo", x);
 			player.yo = tag.getDoubleOr("yo", y);
