@@ -22,6 +22,9 @@ import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.SimpleMenuProvider;
+import net.minecraft.world.inventory.AnvilMenu;
+import net.minecraft.world.inventory.ContainerLevelAccess;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameType;
@@ -286,6 +289,9 @@ public final class EngineGameTest implements FabricClientGameTest {
 		});
 
 		server.runOnServer(s -> s.tickRateManager().setFrozen(false));
+		if (label.equals("ds") && failures.isEmpty()) {
+			this.runOpenMenuCheck(context, server, playerPos.offset(-1, 0, 2), failures);
+		}
 		if (label.equals("sp") && failures.isEmpty()) {
 			this.runRollbackCheck(context, server, connection, id, playerPos.offset(1, 0, 2), failures);
 		}
@@ -384,6 +390,42 @@ public final class EngineGameTest implements FabricClientGameTest {
 			}
 		}
 		return loaded;
+	}
+
+	private void runOpenMenuCheck(ClientGameTestContext context, TestServerContext server, BlockPos anvilPos, List<String> failures) {
+		server.runCommand(setblock(anvilPos, "minecraft:anvil"));
+		server.runCommand("clear @a");
+		context.waitTicks(2);
+		String menuId = UUID.randomUUID().toString();
+		server.runOnServer(s -> {
+			ServerPlayer player = firstPlayer(s);
+			ServerLevel level = s.overworld();
+			player.openMenu(new SimpleMenuProvider((containerId, inventory, owner) -> new AnvilMenu(containerId, inventory, ContainerLevelAccess.create(level, anvilPos)), Component.literal("anvil")));
+			player.containerMenu.getSlot(0).set(new ItemStack(Items.IRON_SWORD));
+			player.containerMenu.getSlot(1).set(new ItemStack(Items.IRON_INGOT, 2));
+			player.containerMenu.setCarried(new ItemStack(Items.FLINT, 4));
+			try {
+				SavestateEngine.get(s).save(menuId, "menu", player);
+			} catch (SavestateException e) {
+				throw new RuntimeException(e);
+			}
+		});
+		server.runCommand("clear @a");
+		server.runOnServer(s -> {
+			try {
+				SavestateEngine.get(s).restore(menuId);
+			} catch (SavestateException e) {
+				throw new RuntimeException(e);
+			}
+			ServerPlayer player = firstPlayer(s);
+			check(failures, player.containerMenu == player.inventoryMenu, "open anvil closed after restore");
+			check(failures, count(player.getInventory(), Items.IRON_SWORD) == 1 && count(player.getInventory(), Items.IRON_INGOT) == 2, "anvil inputs returned to the inventory");
+			check(failures, count(player.getInventory(), Items.FLINT) == 4, "anvil carried item returned to the inventory");
+			SavestateEngine.get(s).delete(menuId);
+		});
+		context.waitFor(mc -> mc.player != null && mc.gui.screen() == null, 600);
+		context.waitTicks(5);
+		context.runOnClient(mc -> check(failures, count(mc.player.getInventory(), Items.IRON_SWORD) == 1 && count(mc.player.getInventory(), Items.FLINT) == 4, "client sees returned anvil items"));
 	}
 
 	private void runRollbackCheck(ClientGameTestContext context, TestServerContext server, TestServerConnection connection, String id, BlockPos markerPos, List<String> failures) {
