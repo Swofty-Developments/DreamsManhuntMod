@@ -113,6 +113,7 @@ public final class SeedStreams {
 			}
 			root.put("tickers", tickers);
 			root.put("entityOrder", net.swofty.dreammanhunt.server.sync.EntityOrder.capture(current));
+			root.put("levelRandoms", net.swofty.dreammanhunt.server.sync.LevelRandoms.capture(current));
 		}
 		tag.put("randomroot", root);
 	}
@@ -130,6 +131,7 @@ public final class SeedStreams {
 		MinecraftServer current = server;
 		if (scheduled != null && current != null) {
 			net.swofty.dreammanhunt.server.sync.EntityOrder.apply(current, scheduled.getCompoundOrEmpty("entityOrder"));
+			net.swofty.dreammanhunt.server.sync.LevelRandoms.apply(current, scheduled.getCompoundOrEmpty("levelRandoms"));
 			for (Tag raw : scheduled.getListOrEmpty("tickers")) {
 				if (raw instanceof CompoundTag tickers) {
 					for (ServerLevel level : current.getAllLevels()) {

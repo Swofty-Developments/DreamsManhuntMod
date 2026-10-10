@@ -231,7 +231,25 @@ public final class WorldSyncGameTest implements FabricClientGameTest {
 			entities.put(entity.getUUID().toString(), entity.getType().builtInRegistryHolder().key().identifier().getPath() + " id=" + entity.getId() + " " + tag);
 		}
 		entities.forEach((uuid, value) -> out.add("N " + uuid + " " + value));
-		out.add("T scheduled=" + level.getBlockTicks().count() + "/" + level.getFluidTicks().count());
+		long now = level.getGameTime();
+		for (int cx = (o.getX() - r) >> 4; cx <= (o.getX() + r) >> 4; cx++) {
+			for (int cz = (o.getZ() - r) >> 4; cz <= (o.getZ() + r) >> 4; cz++) {
+				net.minecraft.world.level.chunk.LevelChunk chunk = level.getChunkSource().getChunkNow(cx, cz);
+				long key = net.minecraft.world.level.ChunkPos.pack(cx, cz);
+				out.add("C " + cx + "," + cz + " loaded=" + (chunk != null) + " ticking=" + level.shouldTickBlocksAt(key) + " entities=" + level.isPositionEntityTicking(new BlockPos(cx << 4, o.getY(), cz << 4)));
+				if (chunk != null) {
+					List<String> ticks = new ArrayList<>();
+					if (chunk.getBlockTicks() instanceof net.minecraft.world.ticks.LevelChunkTicks<?> blockTicks) {
+						blockTicks.getAll().forEach(tick -> ticks.add("block " + tick.type() + "@" + tick.pos().subtract(o).toShortString() + " in " + (tick.triggerTick() - now) + " " + tick.priority()));
+					}
+					if (chunk.getFluidTicks() instanceof net.minecraft.world.ticks.LevelChunkTicks<?> fluidTicks) {
+						fluidTicks.getAll().forEach(tick -> ticks.add("fluid " + tick.type() + "@" + tick.pos().subtract(o).toShortString() + " in " + (tick.triggerTick() - now) + " " + tick.priority()));
+					}
+					ticks.sort(null);
+					ticks.forEach(line -> out.add("T " + line));
+				}
+			}
+		}
 		return out;
 	}
 
