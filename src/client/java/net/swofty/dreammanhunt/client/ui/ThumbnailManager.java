@@ -4,6 +4,7 @@ import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.renderpearl.api.textures.FilterMode;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
 import net.minecraft.client.renderer.texture.DynamicTexture;
@@ -44,7 +45,7 @@ public final class ThumbnailManager {
 	}
 
 	public static Path directory() {
-		return Minecraft.getInstance().gameDirectory.toPath().resolve(DreamManhunt.MOD_ID).resolve("thumbnails");
+		return FabricLoader.getInstance().getGameDir().resolve(DreamManhunt.MOD_ID).resolve("thumbnails");
 	}
 
 	public static Path file(String id) {
