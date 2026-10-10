@@ -30,9 +30,12 @@ public final class EntityRuntimeRestorer {
 			return;
 		}
 		CompoundTag tag = runtime.remove(entity.getUUID());
-		if (tag == null) {
-			return;
+		if (tag != null) {
+			applyTag(entity, tag);
 		}
+	}
+
+	static void applyTag(Entity entity, CompoundTag tag) {
 		EntityAccessor accessor = (EntityAccessor) entity;
 		if (accessor.dreammanhunt$getRandom() instanceof LegacyRandomSource random) {
 			tag.getLong("seed").ifPresent(seed -> ((LegacyRandomSourceAccessor) random).dreammanhunt$getSeed().set(seed));

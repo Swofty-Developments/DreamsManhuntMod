@@ -1,6 +1,7 @@
 package net.swofty.dreammanhunt.server.engine;
 
 import com.google.common.collect.ImmutableList;
+import com.mojang.authlib.GameProfile;
 import com.mojang.logging.LogUtils;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLevelEvents;
 import net.minecraft.core.Registry;
@@ -54,6 +55,7 @@ final class WorldRebuilder {
 	private static final Logger LOGGER = LogUtils.getLogger();
 	private final MinecraftServer server;
 	private final MinecraftServerAccessor accessor;
+	private boolean levelsOpen = true;
 
 	WorldRebuilder(MinecraftServer server) {
 		this.server = server;
@@ -76,7 +78,20 @@ final class WorldRebuilder {
 		}
 	}
 
+	boolean levelsOpen() {
+		return this.levelsOpen;
+	}
+
+	void flushGlobalData() {
+		SavedDataStorage storage = this.server.getDataStorage();
+		this.server.getScoreboard().storeToSaveDataIfDirty(storage.computeIfAbsent(ScoreboardSaveData.TYPE));
+		GameProfile owner = this.server.getSingleplayerProfile();
+		this.accessor.dreammanhunt$getStorageSource().saveDataTag(this.server.getWorldData(), owner == null ? null : owner.id());
+		storage.saveAndJoin();
+	}
+
 	void closeLevels() {
+		this.levelsOpen = false;
 		List<ServerLevel> levels = new ArrayList<>(this.accessor.dreammanhunt$getLevels().values());
 		for (ServerLevel level : levels) {
 			ServerLevelEvents.UNLOAD.invoker().onLevelUnload(this.server, level);
@@ -149,6 +164,7 @@ final class WorldRebuilder {
 		Map<ResourceKey<Level>, ServerLevel> levels = this.accessor.dreammanhunt$getLevels();
 		levels.clear();
 		levels.putAll(created);
+		this.levelsOpen = true;
 		for (ServerLevel level : created.values()) {
 			level.getWorldBorder().setAbsoluteMaxSize(this.server.getAbsoluteMaxWorldSize());
 			this.server.getPlayerList().addWorldborderListener(level);

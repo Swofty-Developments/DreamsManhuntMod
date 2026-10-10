@@ -9,6 +9,7 @@ import net.minecraft.nbt.Tag;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.ServerTickRateManager;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Difficulty;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.GameType;
@@ -97,6 +98,11 @@ final class RuntimeState {
 			}
 		}
 		tag.put("levels", levels);
+		ListTag players = new ListTag();
+		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+			players.add(PlayerRuntime.capture(player));
+		}
+		tag.put("players", players);
 		tag.put("entities", entities);
 		return new RuntimeState(tag);
 	}
@@ -167,6 +173,16 @@ final class RuntimeState {
 			}
 		}
 		EntityRuntimeRestorer.arm(runtime);
+	}
+
+	Map<UUID, CompoundTag> playerRuntime() {
+		Map<UUID, CompoundTag> players = new HashMap<>();
+		for (Tag element : this.tag.getListOrEmpty("players")) {
+			if (element instanceof CompoundTag playerTag) {
+				playerTag.read("uuid", UUIDUtil.CODEC).ifPresent(uuid -> players.put(uuid, playerTag));
+			}
+		}
+		return players;
 	}
 
 	void applyTickRate(MinecraftServer server) {

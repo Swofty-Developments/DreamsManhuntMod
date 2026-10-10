@@ -41,6 +41,7 @@ public final class EngineGameTest implements FabricClientGameTest {
 	private static final Identifier LATER_ADVANCEMENT = Identifier.withDefaultNamespace("story/upgrade_tools");
 	private static final String SAVED_PIG = "SavedPig";
 	private static final String LATER_PIG = "LaterPig";
+	private static final String FAILPOINT = "dreammanhunt.engine.failRestoreAt";
 
 	@Override
 	public void runTest(ClientGameTestContext context) {
@@ -49,6 +50,9 @@ public final class EngineGameTest implements FabricClientGameTest {
 		}
 		try (TestSingleplayerContext singleplayer = context.worldBuilder().create()) {
 			this.runScenario(context, singleplayer.getServer(), singleplayer.getConnection(), "sp");
+		}
+		try (TestSingleplayerContext singleplayer = context.worldBuilder().create()) {
+			this.runScaleScenario(context, singleplayer.getServer(), singleplayer.getConnection());
 		}
 		try (TestDedicatedServerContext server = context.worldBuilder().createServer()) {
 			try (TestDedicatedServerConnection connection = server.connect()) {
@@ -93,10 +97,18 @@ public final class EngineGameTest implements FabricClientGameTest {
 			player.setHealth(13.0F);
 			player.getFoodData().setFoodLevel(15);
 		});
+		server.runOnServer(s -> {
+			ServerPlayer player = firstPlayer(s);
+			player.getCooldowns().addCooldown(new ItemStack(Items.ENDER_PEARL), 400);
+			player.inventoryMenu.getCraftSlots().setItem(0, new ItemStack(Items.OAK_PLANKS, 2));
+			player.inventoryMenu.setCarried(new ItemStack(Items.STICK, 3));
+			player.inventoryMenu.broadcastChanges();
+		});
 		context.waitTicks(10);
 		connection.waitForChunksRender();
 
 		String id = UUID.randomUUID().toString();
+		float[] savedCooldown = new float[1];
 		long[] savedRuntime = new long[4];
 		long saveMillis = server.computeOnServer(s -> {
 			long start = System.nanoTime();
@@ -111,6 +123,7 @@ public final class EngineGameTest implements FabricClientGameTest {
 			Entity pig = findNamed(s.overworld().getAllEntities(), SAVED_PIG);
 			savedRuntime[2] = pig == null ? -1 : pig.tickCount;
 			savedRuntime[3] = pig == null ? -1 : pig.getRandom().nextLong();
+			savedCooldown[0] = firstPlayer(s).getCooldowns().getCooldownPercent(new ItemStack(Items.ENDER_PEARL), 0.0F);
 			return elapsed;
 		});
 		System.out.println("[EngineGameTest] " + label + " save took " + saveMillis + " ms");
@@ -139,6 +152,15 @@ public final class EngineGameTest implements FabricClientGameTest {
 			player.getFoodData().setFoodLevel(20);
 		});
 		server.runCommand("gamemode creative @a");
+		server.runOnServer(s -> {
+			ServerPlayer player = firstPlayer(s);
+			player.getCooldowns().removeCooldown(player.getCooldowns().getCooldownGroup(new ItemStack(Items.ENDER_PEARL)));
+			player.getCooldowns().addCooldown(new ItemStack(Items.CHORUS_FRUIT), 300);
+			player.inventoryMenu.getCraftSlots().setItem(0, ItemStack.EMPTY);
+			player.inventoryMenu.getCraftSlots().setItem(3, new ItemStack(Items.FLINT, 1));
+			player.inventoryMenu.setCarried(ItemStack.EMPTY);
+			player.inventoryMenu.broadcastChanges();
+		});
 		server.runCommand("execute in minecraft:the_nether run tp @a 0 100 0");
 		context.waitFor(mc -> mc.level != null && mc.level.dimension() == Level.NETHER && mc.player != null, 400);
 		context.waitTicks(40);
@@ -158,6 +180,10 @@ public final class EngineGameTest implements FabricClientGameTest {
 			Entity pig = findNamed(s.overworld().getAllEntities(), SAVED_PIG);
 			check(failures, pig != null && pig.tickCount == savedRuntime[2], "pig tick count restored");
 			check(failures, pig != null && pig.getRandom().nextLong() == savedRuntime[3], "pig random restored");
+			ServerPlayer restored = firstPlayer(s);
+			float cooldown = restored.getCooldowns().getCooldownPercent(new ItemStack(Items.ENDER_PEARL), 0.0F);
+			check(failures, cooldown == savedCooldown[0] && cooldown > 0.0F, "server pearl cooldown restored exactly, got " + cooldown + " saved " + savedCooldown[0]);
+			check(failures, !restored.getCooldowns().isOnCooldown(new ItemStack(Items.CHORUS_FRUIT)), "server later cooldown gone");
 			return elapsed;
 		});
 		System.out.println("[EngineGameTest] " + label + " restore took " + restoreMillis + " ms");
@@ -197,9 +223,17 @@ public final class EngineGameTest implements FabricClientGameTest {
 			check(failures, s.getScoreboard().getObjective("dmother") == null, "server later objective gone");
 			check(failures, s.getPlayerList().getPlayers().size() == 1 && s.getPlayerList().getPlayer(player.getUUID()) == player, "server player list consistent");
 			check(failures, player.connection.player == player, "connection points at restored player");
+			check(failures, player.inventoryMenu.getCraftSlots().getItem(0).is(Items.OAK_PLANKS) && player.inventoryMenu.getCraftSlots().getItem(0).getCount() == 2, "server crafting grid restored");
+			check(failures, player.inventoryMenu.getCraftSlots().getItem(3).isEmpty(), "server later grid item gone");
+			check(failures, player.inventoryMenu.getCarried().is(Items.STICK) && player.inventoryMenu.getCarried().getCount() == 3, "server carried item restored");
 		});
 
 		context.runOnClient(mc -> {
+			check(failures, mc.player.getCooldowns().isOnCooldown(new ItemStack(Items.ENDER_PEARL)), "client pearl cooldown restored");
+			check(failures, !mc.player.getCooldowns().isOnCooldown(new ItemStack(Items.CHORUS_FRUIT)), "client later cooldown gone");
+			check(failures, mc.player.inventoryMenu.getCraftSlots().getItem(0).is(Items.OAK_PLANKS), "client crafting grid restored");
+			check(failures, mc.player.inventoryMenu.getCraftSlots().getItem(3).isEmpty(), "client later grid item gone");
+			check(failures, mc.player.inventoryMenu.getCarried().is(Items.STICK) && mc.player.inventoryMenu.getCarried().getCount() == 3, "client carried item restored");
 			check(failures, mc.level.getBlockState(diamondPos).is(Blocks.DIAMOND_BLOCK), "client diamond block restored");
 			check(failures, mc.level.getBlockState(playerPos.offset(3, 3, 5)).is(Blocks.GOLD_BLOCK), "client gold wall restored");
 			check(failures, mc.level.getBlockState(chestPos).is(Blocks.CHEST), "client chest restored");
@@ -223,11 +257,143 @@ public final class EngineGameTest implements FabricClientGameTest {
 			check(failures, dayTime >= savedDayTime && dayTime < savedDayTime + 200, "client time restored, got " + dayTime);
 		});
 
+		if (label.equals("sp") && failures.isEmpty()) {
+			this.runRollbackCheck(context, server, connection, id, playerPos.offset(1, 0, 2), failures);
+		}
 		server.runOnServer(s -> SavestateEngine.get(s).delete(id));
 		if (!failures.isEmpty()) {
 			throw new AssertionError("[" + label + "] savestate restore mismatches: " + String.join("; ", failures));
 		}
 		System.out.println("[EngineGameTest] " + label + " all assertions passed (save " + saveMillis + " ms, restore " + restoreMillis + " ms)");
+	}
+
+	private void runScaleScenario(ClientGameTestContext context, TestServerContext server, TestServerConnection connection) {
+		connection.waitForChunksRender();
+		int radius = 16;
+		long genStart = System.nanoTime();
+		server.runOnServer(s -> {
+			for (ServerLevel level : List.of(s.overworld(), s.getLevel(Level.NETHER))) {
+				for (int x = -radius; x < radius; x++) {
+					for (int z = -radius; z < radius; z++) {
+						level.setChunkForced(x, z, true);
+					}
+				}
+			}
+		});
+		int expected = 4 * radius * radius;
+		server.waitFor(s -> loadedForced(s.overworld(), radius) >= expected && loadedForced(s.getLevel(Level.NETHER), radius) >= expected, 20 * 600);
+		System.out.println("[EngineGameTest] scale: generated " + 2 * expected + " forced chunks in " + (System.nanoTime() - genStart) / 1_000_000L + " ms");
+		int[] chunkCounts = server.computeOnServer(s -> new int[]{s.overworld().getChunkSource().getLoadedChunksCount(), s.getLevel(Level.NETHER).getChunkSource().getLoadedChunksCount()});
+		System.out.println("[EngineGameTest] scale: loaded chunks overworld=" + chunkCounts[0] + " nether=" + chunkCounts[1]);
+
+		String id = UUID.randomUUID().toString();
+		long saveMillis = server.computeOnServer(s -> {
+			long start = System.nanoTime();
+			try {
+				SavestateEngine.get(s).save(id, "scale", firstPlayer(s));
+			} catch (SavestateException e) {
+				throw new RuntimeException(e);
+			}
+			return (System.nanoTime() - start) / 1_000_000L;
+		});
+		server.runOnServer(s -> {
+			for (ServerLevel level : List.of(s.overworld(), s.getLevel(Level.NETHER))) {
+				for (int x = -radius; x < radius; x++) {
+					for (int z = -radius; z < radius; z++) {
+						level.setBlockAndUpdate(new BlockPos(x * 16 + 8, 120, z * 16 + 8), Blocks.GLASS.defaultBlockState());
+					}
+				}
+			}
+		});
+		long restoreMillis = server.computeOnServer(s -> {
+			long start = System.nanoTime();
+			try {
+				SavestateEngine.get(s).restore(id);
+			} catch (SavestateException e) {
+				throw new RuntimeException(e);
+			}
+			return (System.nanoTime() - start) / 1_000_000L;
+		});
+		List<String> failures = new ArrayList<>();
+		server.runOnServer(s -> {
+			for (ServerLevel level : List.of(s.overworld(), s.getLevel(Level.NETHER))) {
+				check(failures, !level.getBlockState(new BlockPos(8, 120, 8)).is(Blocks.GLASS), "scale: mutation reverted in " + level.dimension().identifier());
+				check(failures, !level.getBlockState(new BlockPos((radius - 1) * 16 + 8, 120, (radius - 1) * 16 + 8)).is(Blocks.GLASS), "scale: far mutation reverted in " + level.dimension().identifier());
+			}
+		});
+		context.waitFor(mc -> mc.level != null && mc.player != null && mc.gui.screen() == null, 600);
+		long[] sizes = server.computeOnServer(s -> {
+			java.nio.file.Path dir = s.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).resolve("dreammanhunt").resolve("savestates").resolve(id);
+			try (java.util.stream.Stream<java.nio.file.Path> files = java.nio.file.Files.walk(dir)) {
+				long[] result = new long[2];
+				files.filter(java.nio.file.Files::isRegularFile).forEach(file -> {
+					result[0]++;
+					try {
+						result[1] += java.nio.file.Files.size(file);
+					} catch (java.io.IOException ignored) {
+					}
+				});
+				return result;
+			} catch (java.io.IOException e) {
+				return new long[]{-1, -1};
+			}
+		});
+		server.runOnServer(s -> SavestateEngine.get(s).delete(id));
+		System.out.println("[EngineGameTest] scale: snapshot " + sizes[0] + " files, " + sizes[1] / 1024 + " KiB; save " + saveMillis + " ms, restore " + restoreMillis + " ms");
+		if (!failures.isEmpty()) {
+			throw new AssertionError("[scale] " + String.join("; ", failures));
+		}
+	}
+
+	private static int loadedForced(ServerLevel level, int radius) {
+		int loaded = 0;
+		for (int x = -radius; x < radius; x++) {
+			for (int z = -radius; z < radius; z++) {
+				if (level.getChunkSource().getChunkNow(x, z) != null) {
+					loaded++;
+				}
+			}
+		}
+		return loaded;
+	}
+
+	private void runRollbackCheck(ClientGameTestContext context, TestServerContext server, TestServerConnection connection, String id, BlockPos markerPos, List<String> failures) {
+		server.runCommand(setblock(markerPos, "minecraft:emerald_block"));
+		server.runCommand("xp set @a 33 levels");
+		context.waitTicks(5);
+		String failure = server.computeOnServer(s -> {
+			System.setProperty(FAILPOINT, "players");
+			try {
+				SavestateEngine.get(s).restore(id);
+				return "restore did not fail";
+			} catch (SavestateException e) {
+				return e.getMessage();
+			} finally {
+				System.clearProperty(FAILPOINT);
+			}
+		});
+		System.out.println("[EngineGameTest] injected failure result: " + failure);
+		check(failures, failure.endsWith("the world was rolled back"), "injected failure rolled back, got: " + failure);
+		context.waitFor(mc -> mc.level != null && mc.player != null && mc.gui.screen() == null, 600);
+		connection.waitForChunksRender();
+		context.waitTicks(5);
+		context.takeScreenshot("engine-sp-after-rollback");
+		server.runOnServer(s -> {
+			ServerPlayer player = firstPlayer(s);
+			check(failures, s.overworld().getBlockState(markerPos).is(Blocks.EMERALD_BLOCK), "rollback kept the post-save marker block");
+			check(failures, player.experienceLevel == 33, "rollback kept live xp, got " + player.experienceLevel);
+			check(failures, s.getPlayerList().getPlayers().size() == 1 && player.connection.player == player, "rollback player list consistent");
+			check(failures, count(player.getInventory(), Items.COBBLESTONE) == 23, "rollback kept live inventory");
+			try (java.util.stream.Stream<java.nio.file.Path> entries = java.nio.file.Files.list(s.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).resolve("dreammanhunt"))) {
+				check(failures, entries.noneMatch(path -> path.getFileName().toString().startsWith("restore-backup")), "rollback left no backup behind");
+			} catch (java.io.IOException e) {
+				failures.add("could not list dreammanhunt folder: " + e);
+			}
+		});
+		context.runOnClient(mc -> {
+			check(failures, mc.level.getBlockState(markerPos).is(Blocks.EMERALD_BLOCK), "client sees marker after rollback");
+			check(failures, mc.player.experienceLevel == 33, "client xp after rollback");
+		});
 	}
 
 	private static ServerPlayer firstPlayer(MinecraftServer server) {
