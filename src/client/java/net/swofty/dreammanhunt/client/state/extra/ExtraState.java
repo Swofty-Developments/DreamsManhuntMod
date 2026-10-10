@@ -18,6 +18,7 @@ import org.slf4j.Logger;
 public final class ExtraState {
 	private static final Logger LOGGER = LogUtils.getLogger();
 	private static final Map<CompoundTag, Map<NeedleDirectionHelper.Wobbler, Object[]>> WOBBLERS = Collections.synchronizedMap(new WeakHashMap<>());
+	private static final Map<CompoundTag, Map<Object, Long>> NEEDLE_RANDOMS = Collections.synchronizedMap(new WeakHashMap<>());
 
 	private ExtraState() {
 	}
@@ -31,6 +32,7 @@ public final class ExtraState {
 			tag.put("random", RandomStates.capture(minecraft));
 			root.put("extra", tag);
 			WOBBLERS.put(root, NeedleWobblers.capture());
+			NEEDLE_RANDOMS.put(root, NeedleWobblers.captureRandoms());
 		} catch (Throwable t) {
 			LOGGER.error("Failed to capture extra client state", t);
 		}
@@ -46,6 +48,10 @@ public final class ExtraState {
 			Map<NeedleDirectionHelper.Wobbler, Object[]> wobblers = WOBBLERS.get(root);
 			if (wobblers != null) {
 				NeedleWobblers.apply(wobblers);
+			}
+			Map<Object, Long> needleRandoms = NEEDLE_RANDOMS.get(root);
+			if (needleRandoms != null) {
+				NeedleWobblers.applyRandoms(needleRandoms);
 			}
 		} catch (Throwable t) {
 			LOGGER.error("Failed to apply extra client state", t);
