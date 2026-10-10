@@ -82,8 +82,8 @@ In-memory parts (particles, toasts, subtitles, the live chat message objects) su
 | `NowPlayingToast` static `musicNoteColorTick` :52 (`System.currentTimeMillis`) | music note colour cycle | no | gap | LOW |
 | `SubtitleOverlay` subtitles :25/:27, times :138/:145 | subtitle fade | no | restored: `Subtitle` time calls routed through the visual clock; list deep-copied (in memory) | LOW |
 | `SpectatorGui.lastSelectionTime` :23 | spectator hotbar fade | no | restored: visual clock plus saved value | LOW |
-| `ActiveTextCollector` :77 | scrolling long labels (screens only) | no | not needed in-world | LOW |
-| `EditBox.focusedTime`, `MultiLineEditBox`, `AbstractSignEditScreen`, `IMEPreeditOverlay` | text cursor blink | no | screens only; gap | LOW |
+| `ActiveTextCollector` :77, `LoadingDotsText` :8 | scrolling long labels, loading dots | no | restored: routed through the visual clock | LOW |
+| `EditBox.focusedTime` (`MultiLineEditBox`, `AbstractSignEditScreen`, `IMEPreeditOverlay` not yet) | text cursor blink | no | restored for `EditBox`: visual clock plus the saved `focusedTime` of the chat input | LOW |
 | `ChatListener.previousMessageTime` :47 | chat delay queue | no | gap | LOW |
 | `MouseHandler.lastHandleMovementTime` :55 (`Blaze3D.getTime`), `smoothTurnX/Y` :50-51, `accumulatedDX/DY` :52-53 | cinematic camera smoothing, player turning | no | turning is blocked during the freeze; smoothing state is a gap (only matters with `smoothCamera`) | LOW |
 | `LocalTime` item property (`client/renderer/item/properties/select/LocalTime.java:73`) | real-time clock text | n/a | real local time by design | LOW |
@@ -149,10 +149,12 @@ In-memory parts (particles, toasts, subtitles, the live chat message objects) su
 | `jumpRidingTicks`/`jumpRidingScale` :157-158 | horse jump charge bar | no | gap | LOW |
 | `autoJumpTime` :169, `handsBusy` :167, `crouching` :142 | auto-jump, hand lock, crouch | recomputed per tick | none | LOW |
 | `wasFallFlying` :170 | elytra sound trigger | n/a | none (re-triggering the sound is wanted) | LOW |
-| `xLast`/`yLast`/`zLast`/`yRotLast`/`xRotLast`/`lastOnGround`/`positionReminder` :135-144 | movement packet deltas | n/a | none | LOW |
+| `xLast`/`yLast`/`zLast`/`yRotLast`/`xRotLast`/`lastOnGround`/`positionReminder` :135-144 | movement packet deltas | n/a | restored with every other client primitive; `positionReminder` is forced to 20 at Resume so the next tick reports the position (one position packet per server tick, an extra packet gets the player kicked) | MEDIUM |
 | `experienceDisplayStartTick` :152 | XP bar visibility (vs `tickCount`) | no | Apply | LOW |
 | `ambientSoundHandlers` :132 (`BiomeAmbientSoundsHandler.loopSounds`/`moodiness`, `UnderwaterAmbientSoundHandler`, `BubbleColumnAmbientSoundHandler`) | biome loop, cave mood, underwater ambience | no; the old loop keeps playing and a second copy starts in the same dimension | gap (audible double loop; stopping sounds at restore mitigates it) | MEDIUM |
-| Position, rotation, `xo/yo/zo`, `xOld..`, `yRotO`/`xRotO`, `deltaMovement` | camera position and first-frame interpolation | yes (teleport packet) | Apply copies old values, rotation and motion only when the server position matches the saved one | MEDIUM |
+| Position, rotation, `xo/yo/zo`, `xOld..`, `yRotO`/`xRotO`, `deltaMovement`, collision and fluid flags, pose, shared flags, `stuckSpeedMultiplier`, input (`keyPresses`, `moveVector`, `lastSentInput`), entity and level `RandomSource` state | camera position, first-frame interpolation and the next ticks of movement | partly (teleport to the server's copy, which lags the client by a tick and has no velocity) | restored from the client's own capture (`PlayerMotionState`: every non-final primitive of `LocalPlayer` and its superclasses except `Entity.id`), sprint re-applied through `setSprinting` so the speed modifier comes back | HIGH |
+| Health, absorption, food, saturation, experience (client copy) | hearts, hunger bar, XP bar, heart blink trigger | yes, but possibly after Resume, and a changed value re-arms the blink | set from the capture at Apply so late server updates with the same values are no-ops | HIGH |
+| Open screen (`Gui.screen`): inventory and recipe book visibility, creative tab and scroll, chat input text/cursor/selection/blink, pause menu, mouse position | what is on screen, hover highlight | no; the engine closes menus | reopened at Apply; container screens fall back to the player inventory (server-side reopen needed); death and other screens not reopened | HIGH |
 | `itemActivation` :163 (`client/player/ItemActivation.java`: `item`, `ticks`, `offX`, `offY`) | totem pop animation | partly: the same object carries over from the pre-restore player | Apply copies all four | HIGH |
 | `firstPersonHandsAndItems` :164 (see below) | hands | no | Apply | HIGH |
 
