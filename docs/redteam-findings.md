@@ -51,20 +51,20 @@ Evidence: `beacon` (key + menu path) was 1.7-1.9% differing on every frame, the 
 
 Fix: the walker above restores `levels` and `lastCheckY`, and rebuilds `beamSections`/`checkingBeamSections` from saved (colour, height) pairs.
 
-### 3. Entity-id-seeded animation phase (a + b) — partly fixed, rest handed off
+### 3. Entity-id-seeded animation phase (a + b) — fixed (client UUID seeding plus engine id restore)
 
-Entity ids come from the static `ServerLevel.ENTITY_COUNTER` (`server/level/ServerLevel.java:198`). It only ever grows over server uptime, and in singleplayer it survives world reloads within the same JVM. Every entity the restore re-creates gets a new, higher id. Anything drawn from the id therefore jumps at the cut and shows bits of a counter that tracks uptime.
+Entity ids come from the static `ServerLevel.ENTITY_COUNTER` (`server/level/ServerLevel.java:198`). It only ever grows over server uptime, and in singleplayer it survives world reloads within the same JVM. Before main `bca5376`, every entity the restore re-created got a new, higher id. Anything drawn from the id therefore jumped at the cut and showed bits of a counter that tracks uptime. The engine now restores ids and the counter, which closes the discontinuity. The phantom and witch visuals are additionally seeded from the UUID, because even an exact id still carries bits of the number of entities created since the server started.
 
 | Visual | Location | Status |
 |---|---|---|
 | Phantom wing phase `id*3 + age`, and the client flap sound | `world/entity/monster/Phantom.java:105-114`, `client/renderer/entity/PhantomRenderer.java:30` | **Fixed.** `PhantomMixin` and `PhantomRendererMixin` seed it from the UUID. |
 | Witch nose wiggle speed `0.01*(id % 10)` | `client/renderer/entity/WitchRenderer.java:32`, `client/model/monster/witch/WitchModel.java:69` | **Fixed.** `WitchRendererMixin` seeds it from the UUID. |
-| Animal passenger in a boat faces `yRot + (id%2==0 ? 90 : 270)` | `world/entity/vehicle/boat/AbstractBoat.java:699` | Handed off to **engine**. The code is shared by server and client, so the client cannot reseed it alone. Keeping entity ids stable across a restore (`setId(oldId)` on re-created entities) would close this row and the next two at the root. |
-| Minecart ±0.002 z-fight jitter from an id hash | `client/renderer/entity/AbstractMinecartRenderer.java:40-43,110` | Handed off to engine (as above). Sub-pixel. |
+| Animal passenger in a boat faces `yRot + (id%2==0 ? 90 : 270)` | `world/entity/vehicle/boat/AbstractBoat.java:699` | **Fixed by engine** (main `bca5376`). Saved entity ids and `ENTITY_COUNTER` are restored, so re-created entities keep their ids. |
+| Minecart ±0.002 z-fight jitter from an id hash | `client/renderer/entity/AbstractMinecartRenderer.java:40-43,110` | **Fixed by engine** (as above). Sub-pixel. |
 | Compass with no target (Nether/End) adds `hash(id + ctx)/2^31` | `client/renderer/item/ItemModelResolver.java:31-35`, `client/renderer/item/properties/numeric/CompassAngleState.java:54` | (c). The needle chases a fresh random target every tick, so the constant offset cannot be recovered. |
 | Arrows/stingers stuck in players `RandomSource(id)` | `client/renderer/entity/layers/StuckInBodyLayer.java:65` | Not a tell. `PlayerRestorer` keeps the player id (`setId(old.getId())`). |
 
-### 4. Server rain and thunder level are not restored (b) — handed off to engine
+### 4. Server rain and thunder level are not restored (b) — fixed by engine (main `bca5376`)
 
 Location: `world/level/Level.java:119-122` (`oRainLevel`/`rainLevel`/`oThunderLevel`/`thunderLevel` on the **server** level). The server only sends `RAIN_LEVEL_CHANGE`/`THUNDER_LEVEL_CHANGE` when its own value changes.
 
@@ -72,7 +72,7 @@ The client puts its captured level back, but the server's level is whatever the 
 
 Evidence: `rain` and `thunder` match for +6..+16 ticks, then differ by 43-52% of the frame at +26/+46 as the sky brightness diverges. This happens whenever a save lands inside a weather transition.
 
-Fix (engine): capture and restore the four server `Level` fields per dimension.
+Fix (engine, landed in main): the four server `Level` fields are stored per dimension and re-sent to each player after the restore (`docs/server-state-inventory.md`, "Weather transition").
 
 ### 5. Dropped item bob/spin phase re-rolled (b) — fixed
 
