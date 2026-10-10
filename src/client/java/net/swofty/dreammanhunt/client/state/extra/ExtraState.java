@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.WeakHashMap;
 import net.minecraft.client.Minecraft;
+import net.swofty.dreammanhunt.randomroot.TickerOrder;
 import net.minecraft.client.renderer.item.properties.numeric.NeedleDirectionHelper;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
@@ -25,6 +26,7 @@ public final class ExtraState {
 		try {
 			CompoundTag tag = new CompoundTag();
 			tag.put("blockEntities", BlockEntityAnimations.capture(minecraft));
+			tag.put("tickerOrder", TickerOrder.capture(minecraft.level));
 			tag.put("itemBob", captureItemBob(minecraft));
 			tag.put("random", RandomStates.capture(minecraft));
 			root.put("extra", tag);
@@ -38,6 +40,7 @@ public final class ExtraState {
 		try {
 			CompoundTag tag = root.getCompoundOrEmpty("extra");
 			BlockEntityAnimations.apply(minecraft, tag.getCompoundOrEmpty("blockEntities"));
+			TickerOrder.apply(minecraft.level, tag.getCompoundOrEmpty("tickerOrder"));
 			applyItemBob(minecraft, tag.getCompoundOrEmpty("itemBob"));
 			RandomStates.apply(minecraft, tag.getCompoundOrEmpty("random"));
 			Map<NeedleDirectionHelper.Wobbler, Object[]> wobblers = WOBBLERS.get(root);
