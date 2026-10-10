@@ -21,6 +21,7 @@
 		"ServerGamePacketListenerImplInvoker",
 		"ServerLevelAccessor",
 		"ServerTickRateManagerAccessor",
+		"ThreadSafeLegacyRandomSourceAccessor",
 		"TickRateManagerAccessor"
 	],
 	"injectors": {

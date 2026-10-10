@@ -18,6 +18,7 @@ import net.minecraft.world.level.CustomSpawner;
 import net.minecraft.world.level.levelgen.LegacyRandomSource;
 import net.minecraft.world.level.levelgen.PatrolSpawner;
 import net.minecraft.world.level.levelgen.PhantomSpawner;
+import net.minecraft.world.level.levelgen.ThreadSafeLegacyRandomSource;
 import net.minecraft.world.level.storage.LevelData;
 import net.minecraft.world.level.storage.ServerLevelData;
 import net.minecraft.world.level.storage.WorldData;
@@ -29,6 +30,7 @@ import net.swofty.dreammanhunt.mixin.server.PatrolSpawnerAccessor;
 import net.swofty.dreammanhunt.mixin.server.PhantomSpawnerAccessor;
 import net.swofty.dreammanhunt.mixin.server.ServerLevelAccessor;
 import net.swofty.dreammanhunt.mixin.server.ServerTickRateManagerAccessor;
+import net.swofty.dreammanhunt.mixin.server.ThreadSafeLegacyRandomSourceAccessor;
 import net.swofty.dreammanhunt.mixin.server.TickRateManagerAccessor;
 
 import java.io.IOException;
@@ -78,6 +80,9 @@ final class RuntimeState {
 			LevelAccessor accessor = (LevelAccessor) level;
 			if (accessor.dreammanhunt$getRandom() instanceof LegacyRandomSource random) {
 				levelTag.putLong("random", ((LegacyRandomSourceAccessor) random).dreammanhunt$getSeed().get());
+			}
+			if (accessor.dreammanhunt$getSoundSeedGenerator() instanceof ThreadSafeLegacyRandomSource sound) {
+				levelTag.putLong("sound_seed", ((ThreadSafeLegacyRandomSourceAccessor) sound).dreammanhunt$getSeed().get());
 			}
 			levelTag.putInt("rand_value", accessor.dreammanhunt$getRandValue());
 			levelTag.putInt("empty_time", ((ServerLevelAccessor) level).dreammanhunt$getEmptyTime());
@@ -149,6 +154,9 @@ final class RuntimeState {
 			LevelAccessor accessor = (LevelAccessor) level;
 			if (accessor.dreammanhunt$getRandom() instanceof LegacyRandomSource random) {
 				levelTag.getLong("random").ifPresent(seed -> ((LegacyRandomSourceAccessor) random).dreammanhunt$getSeed().set(seed));
+			}
+			if (accessor.dreammanhunt$getSoundSeedGenerator() instanceof ThreadSafeLegacyRandomSource sound) {
+				levelTag.getLong("sound_seed").ifPresent(seed -> ((ThreadSafeLegacyRandomSourceAccessor) sound).dreammanhunt$getSeed().set(seed));
 			}
 			levelTag.getInt("rand_value").ifPresent(accessor::dreammanhunt$setRandValue);
 			levelTag.getInt("empty_time").ifPresent(((ServerLevelAccessor) level)::dreammanhunt$setEmptyTime);

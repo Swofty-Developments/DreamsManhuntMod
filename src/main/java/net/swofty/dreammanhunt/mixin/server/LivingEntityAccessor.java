@@ -17,4 +17,10 @@ public interface LivingEntityAccessor {
 
 	@Accessor("noActionTime")
 	void dreammanhunt$setNoActionTime(int ticks);
+
+	@Accessor("noJumpDelay")
+	int dreammanhunt$getNoJumpDelay();
+
+	@Accessor("noJumpDelay")
+	void dreammanhunt$setNoJumpDelay(int ticks);
 }
