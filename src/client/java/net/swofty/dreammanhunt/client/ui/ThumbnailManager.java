@@ -23,6 +23,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
 public final class ThumbnailManager {
@@ -36,6 +37,7 @@ public final class ThumbnailManager {
 	private static long pendingSince;
 	private static final Map<String, Identifier> LOADED = new HashMap<>();
 	private static final Map<String, Long> LAST_ATTEMPT = new HashMap<>();
+	private static final Set<String> DISCARDED = ConcurrentHashMap.newKeySet();
 
 	private ThumbnailManager() {
 	}
@@ -99,7 +101,9 @@ public final class ThumbnailManager {
 			screenshot.resizeSubRectTo((width - cropWidth) / 2, (height - cropHeight) / 2, cropWidth, cropHeight, scaled);
 			Files.createDirectories(directory());
 			for (String id : ids) {
-				scaled.writeToFile(file(id));
+				if (!DISCARDED.contains(id)) {
+					scaled.writeToFile(file(id));
+				}
 			}
 		} catch (IOException | RuntimeException e) {
 			DreamManhunt.LOGGER.warn("Could not save savestate thumbnail for {}", ids, e);
@@ -112,6 +116,7 @@ public final class ThumbnailManager {
 			return;
 		}
 		PENDING.remove(id);
+		DISCARDED.add(id);
 		release(id);
 		Path path = file(id);
 		Util.ioPool().execute(() -> {
