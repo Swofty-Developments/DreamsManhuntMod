@@ -10,6 +10,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.TickRateManager;
 import net.swofty.dreammanhunt.DreamManhunt;
 import net.swofty.dreammanhunt.api.SavestateInfo;
+import net.swofty.dreammanhunt.mixin.common.PlayerChunkSenderAccessor;
 import net.swofty.dreammanhunt.network.SavestatePayloads;
 import net.swofty.dreammanhunt.server.engine.SavestateEngine;
 import org.jspecify.annotations.Nullable;
@@ -288,7 +289,22 @@ public final class SavestateCoordinator {
 	public void afterTick() {
 		if (this.barrier != null) {
 			this.syncEntityTracking();
+			this.checkComplete();
 		}
+	}
+
+	private boolean chunksDelivered(Barrier barrier) {
+		for (UUID uuid : barrier.participants) {
+			ServerPlayer player = this.server.getPlayerList().getPlayer(uuid);
+			if (player == null) {
+				continue;
+			}
+			PlayerChunkSenderAccessor sender = (PlayerChunkSenderAccessor) player.connection.chunkSender;
+			if (!sender.dreammanhunt$pendingChunks().isEmpty() || sender.dreammanhunt$unacknowledgedBatches() > 0) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private void syncEntityTracking() {
@@ -307,9 +323,17 @@ public final class SavestateCoordinator {
 
 	private void checkComplete() {
 		Barrier barrier = this.barrier;
-		if (barrier != null && barrier.pending.isEmpty()) {
-			this.finish(barrier, false);
+		if (barrier == null || !barrier.pending.isEmpty()) {
+			return;
 		}
+		if (!this.chunksDelivered(barrier)) {
+			if (!barrier.waitingForChunks) {
+				barrier.waitingForChunks = true;
+				DreamManhunt.LOGGER.info("Restore {} barrier: everyone is ready, waiting for chunk delivery", barrier.id);
+			}
+			return;
+		}
+		this.finish(barrier, false);
 	}
 
 	private void finish(Barrier barrier, boolean timedOut) {
@@ -360,6 +384,7 @@ public final class SavestateCoordinator {
 		final long deadlineNanos;
 		final boolean failed;
 		final long startNanos = System.nanoTime();
+		boolean waitingForChunks;
 
 		Barrier(String id, String name, Requester requester, Set<UUID> participants, boolean restoredFrozen, int restoredStepTicks,
 				long deadlineNanos, boolean failed) {
