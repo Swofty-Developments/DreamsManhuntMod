@@ -19,10 +19,14 @@ import java.util.Map;
 import java.util.Set;
 
 public final class TimelineRunner {
-	public record Divergence(String subject, int tick, String field, String a, String b) {
+	public record Divergence(String subject, int tick, String field, String a, String b, List<String> others) {
 		@Override
 		public String toString() {
-			return "tick " + this.tick + " " + this.subject + " " + this.field + ": A=" + clip(this.a) + " B=" + clip(this.b);
+			StringBuilder text = new StringBuilder("tick " + this.tick + " " + this.subject + " " + this.field + ": A=" + clip(this.a) + " B=" + clip(this.b));
+			for (String other : this.others) {
+				text.append("\n[timeline]       also ").append(other);
+			}
+			return text.toString();
 		}
 	}
 
@@ -39,6 +43,7 @@ public final class TimelineRunner {
 		}
 	}
 
+	private static final int MAX_EXTRA_FIELDS = 12;
 	private final ClientGameTestContext context;
 	private final TestServerContext server;
 	private final BlockPos origin;
@@ -63,6 +68,7 @@ public final class TimelineRunner {
 			TimelineEnv.run(s, "savestate save " + name);
 			SavestateInfo info = SavestateEngine.get(s).find(name).orElseThrow();
 			recordingA[0] = new TimelineRecorder.Recording(scenario, env, area, info.gameTime());
+			recordingA[0].server.put(0, Probes.captureServer(s, area));
 			TimelineRecorder.start(recordingA[0]);
 			return info.id();
 		});
@@ -75,6 +81,7 @@ public final class TimelineRunner {
 		this.server.runOnServer(s -> {
 			TimelineEnv.run(s, "savestate load " + id);
 			recordingB[0] = new TimelineRecorder.Recording(scenario, env, area, recordingA[0].baseGameTime);
+			recordingB[0].server.put(0, Probes.captureServer(s, area));
 			TimelineRecorder.start(recordingB[0]);
 		});
 		this.context.waitFor(mc -> SavestateClientNetwork.restoresCompleted() > restoresBefore && recordingB[0].serverDone() && recordingB[0].clientDone(),
@@ -122,20 +129,28 @@ public final class TimelineRunner {
 				Map<String, String> sa = fa.subjects().get(subject);
 				Map<String, String> sb = fb.subjects().get(subject);
 				if (sa == null || sb == null) {
-					result.add(new Divergence(subject, tick, "presence", sa == null ? "absent" : "present", sb == null ? "absent" : "present"));
+					result.add(new Divergence(subject, tick, "presence", sa == null ? "absent" : "present", sb == null ? "absent" : "present", List.of()));
 					reported.add(subject);
 					continue;
 				}
 				Set<String> fields = new LinkedHashSet<>(sa.keySet());
 				fields.addAll(sb.keySet());
+				Divergence first = null;
+				List<String> others = new ArrayList<>();
 				for (String field : fields) {
 					String va = sa.get(field);
 					String vb = sb.get(field);
 					if (!java.util.Objects.equals(va, vb)) {
-						result.add(new Divergence(subject, tick, field, va, vb));
-						reported.add(subject);
-						break;
+						if (first == null) {
+							first = new Divergence(subject, tick, field, va, vb, others);
+						} else if (others.size() < MAX_EXTRA_FIELDS) {
+							others.add(field + ": A=" + clip(va) + " B=" + clip(vb));
+						}
 					}
+				}
+				if (first != null) {
+					result.add(first);
+					reported.add(subject);
 				}
 			}
 		}
