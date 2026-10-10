@@ -34,6 +34,10 @@
 			"environment": "client"
 		},
 		{
+			"config": "dreammanhunt.sync.mixins.json",
+			"environment": "*"
+		},
+		{
 			"config": "dreammanhunt.randomroot.mixins.json",
 			"environment": "*"
 		},

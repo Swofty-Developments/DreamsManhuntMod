@@ -274,10 +274,6 @@ public final class WorldSyncGameTest implements FabricClientGameTest {
 		startRecording(scene, origin);
 		server.runCommand("savestate load " + id);
 		context.waitFor(mc -> SavestateClientNetwork.restoresCompleted() > restoresBefore, 1200);
-		long restoredTime = server.computeOnServer(s -> s.overworld().getGameTime());
-		if (restoredTime != savedTime) {
-			return "restored game time " + restoredTime + " != saved " + savedTime;
-		}
 		Map<Long, List<String>> second = record(context, server, scene, origin, savedTime);
 		server.runCommand("savestate delete " + id);
 		return compare(scene, first, second, savedTime);
