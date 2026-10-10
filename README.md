@@ -124,9 +124,11 @@ Both are under **Controls → DreamManhunt**.
 
 ### Cut marker
 
-During a restore, every restoring client draws a solid `#00FF00` bar over the left 6% of the screen, on top of everything. It is on every frozen frame and gone on the first frame of resumed play, which matches the first frame after the save. To cut, remove everything from the first frame after the save through the last frame with the bar.
+During a restore, every restoring client draws a solid `#00FF00` bar over the left 6% of the screen, on top of everything. It is on every frozen frame and gone on the first frame of resumed play.
 
-With `saveMarker` on, a `#FF0000` bar of the same shape covers the 10 ticks after a save capture. Those frames fall inside the removed segment.
+With `saveMarker` on, a `#FF0000` bar of the same shape starts on the first frame after a save is captured and stays for 10 ticks. The capture lands when the server takes the savestate, a tick or more after the save key press.
+
+To cut, remove everything from the first red frame through the last green frame. The first frame after the green bar matches the first red frame without the bar.
 
 Neither bar appears in thumbnails.
 
