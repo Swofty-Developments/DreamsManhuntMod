@@ -109,7 +109,7 @@ public final class EngineGameTest implements FabricClientGameTest {
 
 		String id = UUID.randomUUID().toString();
 		float[] savedCooldown = new float[1];
-		long[] savedRuntime = new long[4];
+		long[] savedRuntime = new long[5];
 		long saveMillis = server.computeOnServer(s -> {
 			long start = System.nanoTime();
 			try {
@@ -123,6 +123,7 @@ public final class EngineGameTest implements FabricClientGameTest {
 			Entity pig = findNamed(s.overworld().getAllEntities(), SAVED_PIG);
 			savedRuntime[2] = pig == null ? -1 : pig.tickCount;
 			savedRuntime[3] = pig == null ? -1 : pig.getRandom().nextLong();
+			savedRuntime[4] = ((net.swofty.dreammanhunt.mixin.server.LevelAccessor) s.overworld()).dreammanhunt$getSoundSeedGenerator().nextLong();
 			savedCooldown[0] = firstPlayer(s).getCooldowns().getCooldownPercent(new ItemStack(Items.ENDER_PEARL), 0.0F);
 			return elapsed;
 		});
@@ -180,6 +181,7 @@ public final class EngineGameTest implements FabricClientGameTest {
 			Entity pig = findNamed(s.overworld().getAllEntities(), SAVED_PIG);
 			check(failures, pig != null && pig.tickCount == savedRuntime[2], "pig tick count restored");
 			check(failures, pig != null && pig.getRandom().nextLong() == savedRuntime[3], "pig random restored");
+			check(failures, ((net.swofty.dreammanhunt.mixin.server.LevelAccessor) s.overworld()).dreammanhunt$getSoundSeedGenerator().nextLong() == savedRuntime[4], "overworld sound seed restored");
 			ServerPlayer restored = firstPlayer(s);
 			float cooldown = restored.getCooldowns().getCooldownPercent(new ItemStack(Items.ENDER_PEARL), 0.0F);
 			check(failures, cooldown == savedCooldown[0] && cooldown > 0.0F, "server pearl cooldown restored exactly, got " + cooldown + " saved " + savedCooldown[0]);
