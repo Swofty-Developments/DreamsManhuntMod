@@ -20,7 +20,7 @@ import net.swofty.dreammanhunt.client.state.ClientStateManager;
 
 public final class ClientStateGameTest implements FabricClientGameTest {
 	private static final String STATE_ID = "clientstate-gametest";
-	private static final int[] FRAME_OFFSETS = {0, 1, 2, 3, 7, 13, 40};
+	private static final int[] FRAME_OFFSETS = {0, 3, 6, 9, 13, 20, 40};
 	private static final List<String> VOLATILE_KEYS = List.of("visualNanos");
 
 	@Override
@@ -141,15 +141,31 @@ public final class ClientStateGameTest implements FabricClientGameTest {
 	}
 
 	private static void recordFrames(ClientGameTestContext context, String prefix, List<Path> shots, List<Integer> ticks) {
-		int done = 0;
+		int baseHud = context.computeOnClient(ClientStateGameTest::hudTicks);
+		long baseClient = context.computeOnClient(ClientStateGameTest::clientTicks);
 		for (int offset : FRAME_OFFSETS) {
-			if (offset > done) {
-				context.waitTicks(offset - done);
-				done = offset;
+			int target = baseHud + offset;
+			while (context.computeOnClient(ClientStateGameTest::hudTicks) < target) {
+				context.waitTick();
 			}
-			ticks.add(context.computeOnClient(ClientStateGameTest::hudTicks));
+			int hud = context.computeOnClient(ClientStateGameTest::hudTicks);
+			long client = context.computeOnClient(ClientStateGameTest::clientTicks);
+			if (hud != target) {
+				throw new AssertionError(prefix + ": the previous screenshot ran past tick offset " + offset + " (hud " + hud + ", wanted " + target + ")");
+			}
+			if (client - baseClient != offset) {
+				throw new AssertionError(prefix + ": Hud.tickCount and Minecraft.clientTickCount drifted apart at offset " + offset
+					+ " (hud +" + offset + ", client +" + (client - baseClient) + ")");
+			}
+			ticks.add(hud);
 			shots.add(context.takeScreenshot(prefix + "-t" + offset));
+			long consumed = context.computeOnClient(ClientStateGameTest::clientTicks) - client;
+			System.out.printf("[clientstate] %s-t%d at hud tick %d, screenshot readback took %d tick(s)%n", prefix, offset, hud, consumed);
 		}
+	}
+
+	private static long clientTicks(Minecraft mc) {
+		return ClientSnapshot.counters(mc).getCompoundOrEmpty("timing").getLongOr("clientTickCount", -1L);
 	}
 
 	private static int hudTicks(Minecraft mc) {
