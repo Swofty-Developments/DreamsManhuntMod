@@ -9,7 +9,9 @@ public final class DreamManhuntClient implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
 		SavestateKeys.register();
-		SavestateClientNetwork.init();
+		if (!Boolean.getBoolean("dreammanhunt.disableNetworking")) {
+			SavestateClientNetwork.init();
+		}
 		ClientTickEvents.END_CLIENT_TICK.register(SavestateKeys::tick);
 	}
 }
