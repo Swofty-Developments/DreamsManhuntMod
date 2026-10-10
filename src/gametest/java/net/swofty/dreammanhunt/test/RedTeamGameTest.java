@@ -620,7 +620,7 @@ public final class RedTeamGameTest implements FabricClientGameTest {
 					+ " particles " + seedOf(net.minecraft.client.particle.ParticleEngine.class, "random", mc.particleEngine)
 					+ " count " + mc.particleEngine.countParticles()
 					+ " clientGameTime " + mc.level.getGameTime() + " rain " + mc.level.getRainLevel(1.0F)
-					+ " health " + mc.player.getHealth() + " dim " + mc.level.dimension().identifier());
+					+ " health " + mc.player.getHealth() + " dim " + mc.level.dimension().identifier() + beaconDebug(mc));
 				System.out.printf("[redteam-debug] %s t%d stream draws %d, player/camera %s, rng %s%n", prefix, offset, used.size(), pos, rngs);
 				for (int i = 0; i < used.size(); i++) {
 					System.out.printf("[redteam-debug] %s t%d draw %d %s%n", prefix, offset, i, used.get(i));
@@ -628,6 +628,41 @@ public final class RedTeamGameTest implements FabricClientGameTest {
 			}
 			shots.add(context.takeScreenshot(prefix + "-t" + offset));
 		}
+	}
+
+	private static String beaconDebug(Minecraft mc) {
+		StringBuilder out = new StringBuilder();
+		BlockPos center = mc.player.blockPosition();
+		for (BlockPos pos : BlockPos.betweenClosed(center.offset(-8, -4, -8), center.offset(8, 8, 12))) {
+			if (mc.level.getBlockEntity(pos) instanceof net.minecraft.world.level.block.entity.BeaconBlockEntity beacon) {
+				try {
+					java.lang.reflect.Field levels = beacon.getClass().getDeclaredField("levels");
+					java.lang.reflect.Field lastCheckY = beacon.getClass().getDeclaredField("lastCheckY");
+					java.lang.reflect.Field beam = beacon.getClass().getDeclaredField("beamSections");
+					java.lang.reflect.Field checking = beacon.getClass().getDeclaredField("checkingBeamSections");
+					for (java.lang.reflect.Field f : List.of(levels, lastCheckY, beam, checking)) {
+						f.setAccessible(true);
+					}
+					List<?> b = (List<?>) beam.get(beacon);
+					List<?> c = (List<?>) checking.get(beacon);
+					out.append(" beacon levels ").append(levels.get(beacon)).append(" lastCheckY ").append(lastCheckY.get(beacon))
+						.append(" alias ").append(b == c).append(" beam ").append(sections(b)).append(" checking ").append(sections(c));
+				} catch (ReflectiveOperationException e) {
+					out.append(" beacon ?");
+				}
+			}
+		}
+		return out.toString();
+	}
+
+	private static String sections(List<?> list) {
+		StringBuilder out = new StringBuilder("[");
+		for (Object o : list) {
+			if (o instanceof net.minecraft.world.level.block.entity.BeaconBeamOwner.Section section) {
+				out.append(Integer.toHexString(section.getColor())).append(':').append(section.getHeight()).append(' ');
+			}
+		}
+		return out.append(']').toString();
 	}
 
 	private static String seedOf(Class<?> owner, String name, Object target) {
