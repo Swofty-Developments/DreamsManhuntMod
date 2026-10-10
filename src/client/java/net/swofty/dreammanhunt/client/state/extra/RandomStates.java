@@ -6,6 +6,8 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
+import net.minecraft.client.particle.SpellParticle;
+import net.minecraft.world.level.block.entity.EnchantingTableBlockEntity;
 import net.swofty.dreammanhunt.randomroot.SeedStreams;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.util.RandomSource;
@@ -26,6 +28,8 @@ public final class RandomStates {
 			entities.put(entity.getUUID().toString(), state(read(Entity.class, "random", entity)));
 		}
 		tag.put("entities", entities);
+		tag.put("enchantingTable", state(read(EnchantingTableBlockEntity.class, "RANDOM", null)));
+		tag.put("spellParticle", state(read(SpellParticle.class, "RANDOM", null)));
 		tag.put("stream", SeedStreams.CLIENT.capture());
 		return tag;
 	}
@@ -38,6 +42,8 @@ public final class RandomStates {
 		restore(read(Font.class, "random", minecraft.font), tag.getCompoundOrEmpty("font"));
 		restore(read(Level.class, "random", minecraft.level), tag.getCompoundOrEmpty("level"));
 		restore(read(minecraft.particleEngine.getClass(), "random", minecraft.particleEngine), tag.getCompoundOrEmpty("particles"));
+		restore(read(EnchantingTableBlockEntity.class, "RANDOM", null), tag.getCompoundOrEmpty("enchantingTable"));
+		restore(read(SpellParticle.class, "RANDOM", null), tag.getCompoundOrEmpty("spellParticle"));
 		CompoundTag entities = tag.getCompoundOrEmpty("entities");
 		for (Entity entity : minecraft.level.entitiesForRendering()) {
 			UUID uuid = entity.getUUID();

@@ -157,14 +157,37 @@ When the save happens with the inventory open (`inventory_glint`), the resumed g
 
 `spyglass` saves while the spyglass is in use, with the use key still held. After the restore the scope overlay is gone and the item is lowered (60% differs). The client re-applies `startUsingItem`, but the restored server player is not using the item and stops the use. The use key is held through the restore and is never re-pressed, so vanilla never restarts it. The same applies to bows, eating, shields and tridents.
 
-### 17. Remaining residuals not explained in the time box
+### 17. Server and client tick phase shifted by one tick after some restores (b) — fixed (coordinator, `e47dc0c`)
 
-- `snow`: rain columns diverge from +16 ticks (8.6%), the same pattern as finding 4 before the engine fix. This scene sets the weather after a `fillbiome`. Possibly a weather-transition edge case.
-- `campfire_fire`: smoke diverges from +10 ticks (6.3%). It was 0.000% in the run before the latest main merge (run 7, same red-team code), so something in that merge shifts the client particle stream. Use `REDTEAM_SEEDDEBUG=1` to list the call site of every stream draw in both timelines.
-- `enchanting_table` (0.76%): page flips use the static `EnchantingTableBlockEntity.RANDOM`. In singleplayer both the integrated server thread and the client thread tick enchanting tables, so they race on that one generator. This cannot be made deterministic without splitting it per side. On a dedicated server only the client draws from it.
-- `lightning_obfuscated`: both bolts are pixel-identical (seeded from the restored UUID). The obfuscated glyphs still differ. The per-frame glyph seed mixes in the frame's partial tick, and the harness does not pin it the same way for both timelines.
-- `fluids` (6.7%) and `walking` (7.8%): finding 8 (player moving at the save).
-- `hotbar_pop` (5.6%): the obfuscated title from the previous scene is still on screen, so it shows the glyph residual above.
+Location: `server/coordinator/SavestateCoordinator.afterTick` (main `42ef0aa`).
+
+Once the barrier also waited for chunk delivery, it could complete from the end-of-tick hook (`tickChildren` TAIL). There it sent `RestoreResume` one level tick earlier, relative to the server, than both the ready-packet path (head of the tick, right after `processQueuedPackets`) and the save. When that happened, the resumed client ran a tick ahead of the server.
+
+Every server-driven value then arrived a tick late. Client game time (sky, clouds, rain column scroll), rain levels and rain splash counts all differed. The debug trace showed `clientGameTime 374` (uncut) vs `373` (restored) with every RNG state identical.
+
+This caused the flaky `snow`/`rain` residual: whichever scene's restore had to wait for chunks showed it, and it was 8.6% in the final run. Fix: the completion check moved from `afterTick` to a new `beforeTick` at the head of `tickServer`.
+
+### 18. Block entity ticker order changes after a restore (b) — fixed (`10ab7ad`)
+
+Location: `world/level/Level.java:110-112` (`blockEntityTickers`, `pendingBlockEntityTickers`).
+
+A restore re-adds block entities in chunk-packet (client) or chunk-load (server) order. Tickers that share the level RNG then draw from it in a different order. Campfire smoke (`CampfireBlockEntity.particleTick` uses `level.random`), spawners and vaults all diverge, while the RNG states sampled between ticks stay identical.
+
+This caused the `campfire_fire` regression after the main merge (6.3-9.8%). Fix: `randomroot.TickerOrder` captures the ticker order by position and re-sorts the lists, on the client at Resume and on the server at the first unfrozen tick.
+
+### 19. §k glyphs depended on frame count and render path (b) — fixed (`2f5cd8f`)
+
+Fabric's screenshot renders through `GameRenderer.extract/render` with a fixed `DeltaTracker`, not through `Minecraft.renderFrame`, so the per-frame reseed was skipped there. Real play has the same problem whenever frame counts per tick differ.
+
+`GlyphSeedMixin` now reseeds `Font.random` at the head of `GameRenderer.extract` from `mix(session salt ^ mix(clientTickCount, partial tick bits))`. Glyphs still change every frame, as in vanilla, but they are a pure function of game time (tick + partial tick), like everything else on screen. `lightning_obfuscated` went from 5.7% to 0.000%.
+
+### 20. Spawner scene now diverges through spawned pigs (b) — handed off to engine
+
+`spawners` spawns pigs (`RequiredPlayerRange 16`). With the engine's spawner display-entity regression in main (finding 13, still thrown 2,334 times per run), the spawned pigs' positions and AI differ between the timelines (21% at +26 ticks before the ticker-order fix). The final run shows whether ticker order alone closes it.
+
+### Residual
+
+- `enchanting_table` (0.3-0.8%): page flips use the static `EnchantingTableBlockEntity.RANDOM`. In singleplayer both the integrated server thread and the client thread tick enchanting tables and draw from that one generator, so the interleaving is decided by thread scheduling. It cannot be made exact without giving each side its own generator. On a dedicated server only the client draws from it.
 
 ## Randomness at the root
 
