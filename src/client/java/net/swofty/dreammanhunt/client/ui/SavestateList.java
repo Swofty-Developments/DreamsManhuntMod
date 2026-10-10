@@ -80,6 +80,10 @@ public final class SavestateList extends ObjectSelectionList<SavestateList.Entry
 			return this.info;
 		}
 
+		public Button deleteButton() {
+			return this.deleteButton;
+		}
+
 		@Override
 		public Component getNarration() {
 			return Component.translatable("narrator.select", Component.translatable("dreammanhunt.menu.narration",

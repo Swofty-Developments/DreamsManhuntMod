@@ -20,6 +20,9 @@ public final class SavestateClientNetwork {
 	private static boolean canManage;
 	private static int listVersion;
 	private static @Nullable String lastRestoreId;
+	private static int saveRequests;
+	private static int restoresCompleted;
+	private static volatile boolean readySuppressedForTesting;
 
 	private SavestateClientNetwork() {
 	}
@@ -56,6 +59,10 @@ public final class SavestateClientNetwork {
 					DreamManhunt.LOGGER.warn("RestoreReady for {} sent more than once", id);
 					return;
 				}
+				if (readySuppressedForTesting) {
+					DreamManhunt.LOGGER.warn("Not sending RestoreReady for {} (suppressed for testing)", id);
+					return;
+				}
 				Minecraft.getInstance().execute(() -> {
 					if (ClientPlayNetworking.canSend(SavestatePayloads.RestoreReady.TYPE)) {
 						ClientPlayNetworking.send(new SavestatePayloads.RestoreReady(id));
@@ -63,8 +70,10 @@ public final class SavestateClientNetwork {
 				});
 			});
 		});
-		ClientPlayNetworking.registerGlobalReceiver(SavestatePayloads.RestoreResume.TYPE, (payload, context) ->
-				ClientStateManager.get().onRestoreResume(payload.id()));
+		ClientPlayNetworking.registerGlobalReceiver(SavestatePayloads.RestoreResume.TYPE, (payload, context) -> {
+			ClientStateManager.get().onRestoreResume(payload.id());
+			restoresCompleted++;
+		});
 		ClientPlayNetworking.registerGlobalReceiver(SavestatePayloads.Notice.TYPE, (payload, context) ->
 				showNotice(payload.text()));
 
@@ -99,6 +108,18 @@ public final class SavestateClientNetwork {
 		return lastRestoreId;
 	}
 
+	public static int restoresCompleted() {
+		return restoresCompleted;
+	}
+
+	public static int saveRequests() {
+		return saveRequests;
+	}
+
+	public static void setReadySuppressedForTesting(boolean suppressed) {
+		readySuppressedForTesting = suppressed;
+	}
+
 	public static void requestList() {
 		if (serverHasMod()) {
 			ClientPlayNetworking.send(SavestatePayloads.ListRequest.INSTANCE);
@@ -114,6 +135,7 @@ public final class SavestateClientNetwork {
 			return false;
 		}
 		ClientStateManager.get().capturePending();
+		saveRequests++;
 		ClientPlayNetworking.send(new SavestatePayloads.SaveRequest(name));
 		return true;
 	}
