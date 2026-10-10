@@ -406,6 +406,33 @@ class Harness:
 		self.check(distance < 0.01, f"latecomer kept its position through the restore (moved {distance:.4f})")
 		self.check(late_before["latecomer"]["inventory"] == late_after["inventory"], "latecomer kept its inventory through the restore")
 
+		for name in BARRIER_PARTICIPANTS:
+			events = self.events(name)
+			on = [e for e in events if e["kind"] == "cut_marker_on"]
+			off = [e for e in events if e["kind"] == "cut_marker_off"]
+			resume = next((e for e in events if e["kind"] == "resume_packet" and e.get("id") == state_id), None)
+			self.check(len(on) == 1 and len(off) == 1, f"{name} showed the cut marker exactly once ({len(on)} on, {len(off)} off)")
+			if on and off and resume:
+				before_count = int(on[0]["restores"])
+				self.check(int(off[0]["restores"]) == before_count + 1,
+					f"{name}: the first frame without the cut marker came after the resume ({off[0]['frozen_frames']} frozen frames)")
+		vanilla_events = {e["kind"] for e in self.events("vanillaish")}
+		self.check("cut_marker_on" not in vanilla_events, "vanilla-style client never showed the cut marker")
+		frozen_shots = [self.run_dir / "shots" / f"{n}-frozen-0.png" for n in BARRIER_PARTICIPANTS]
+		missing = [p.name for p in frozen_shots if not p.exists()]
+		self.check(not missing, f"every participant took a frozen-frame screenshot (missing {missing})")
+		marker_shots = [p for p in frozen_shots if p.exists()]
+		marker_shots += [self.run_dir / "shots" / f"{n}-{phase}-{k}.png" for n in MODDED_AT_SAVE for phase in ("cap", "res") for k in SHOT_OFFSETS]
+		output = subprocess.check_output(["taskset", "-c", CPUS, self.client_launch["java"], str(ROOT / "scripts/multiclient/ImageDiff.java"),
+			"--green", *map(str, marker_shots)], text=True)
+		for line in output.splitlines():
+			_, file, band, rest = line.split("|")
+			band, rest, name = float(band), float(rest), Path(file).name
+			if "-frozen-" in name:
+				self.check(band == 1.0 and rest < 0.01, f"{name}: solid green cut marker band ({band:.4f} of the band, {rest:.4f} elsewhere)")
+			else:
+				self.check(band < 0.01, f"{name}: no cut marker outside the freeze ({band:.4f} of the band)")
+
 		pairs = []
 		for name in MODDED_AT_SAVE:
 			for k in SHOT_OFFSETS:

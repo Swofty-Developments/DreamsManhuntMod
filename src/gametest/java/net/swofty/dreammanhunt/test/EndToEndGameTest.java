@@ -31,6 +31,8 @@ import net.minecraft.world.phys.Vec3;
 import net.swofty.dreammanhunt.api.SavestateInfo;
 import net.swofty.dreammanhunt.client.network.SavestateClientNetwork;
 import net.swofty.dreammanhunt.client.state.ClientStateManager;
+import net.swofty.dreammanhunt.client.ui.ClientConfig;
+import net.swofty.dreammanhunt.client.ui.CutMarker;
 import net.swofty.dreammanhunt.client.ui.SavestateKeys;
 import net.swofty.dreammanhunt.client.ui.SavestateList;
 import net.swofty.dreammanhunt.client.ui.SavestateMenuScreen;
@@ -45,10 +47,14 @@ import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.net.ServerSocket;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -73,6 +79,8 @@ public final class EndToEndGameTest implements FabricClientGameTest {
 			context.waitTicks(20);
 			String id = saveAndRestore(context, singleplayer.getServer(), "singleplayer");
 			saveFromMenuThenDelete(context, singleplayer.getServer());
+			cutMarker(context, singleplayer.getServer());
+			saveMarker(context, singleplayer.getServer());
 			barrierTimesOut(context, singleplayer.getServer(), id);
 		}
 
@@ -112,10 +120,21 @@ public final class EndToEndGameTest implements FabricClientGameTest {
 		return properties;
 	}
 
+	private record Frame(long frame, boolean cut, boolean save, int restores, boolean restoring) {
+	}
+
+	private static final List<Frame> FRAMES = new CopyOnWriteArrayList<>();
+	private static volatile boolean recordFrames;
+
 	private static void installListeners() {
 		if (!LISTENERS.compareAndSet(false, true)) {
 			return;
 		}
+		CutMarker.addFrameListener((frame, cut, save) -> {
+			if (recordFrames) {
+				FRAMES.add(new Frame(frame, cut, save, SavestateClientNetwork.restoresCompleted(), ClientStateManager.get().isRestoring()));
+			}
+		});
 		ClientTickEvents.END_CLIENT_TICK.register(mc -> {
 			int requests = SavestateClientNetwork.saveRequests();
 			if (requests != seenSaveRequests) {
@@ -415,5 +434,194 @@ public final class EndToEndGameTest implements FabricClientGameTest {
 		check(!server.computeOnServer(s -> SavestateCoordinator.get(s).isBusy()), "read-only click must not start a restore");
 		context.setScreen(() -> null);
 		context.waitTicks(5);
+	}
+
+	private static NativeImage readImage(Path path) {
+		try (InputStream in = Files.newInputStream(path)) {
+			return NativeImage.read(in);
+		} catch (IOException e) {
+			throw new AssertionError("unreadable image " + path, e);
+		}
+	}
+
+	private static double markerFraction(NativeImage image, int argb, int fromX, int toX) {
+		long hits = 0;
+		long total = 0;
+		for (int y = 0; y < image.getHeight(); y += 2) {
+			for (int x = fromX; x < toX; x += 2) {
+				total++;
+				if ((image.getPixel(x, y) & 0xFFFFFF) == (argb & 0xFFFFFF)) {
+					hits++;
+				}
+			}
+		}
+		return total == 0 ? 0.0 : hits / (double) total;
+	}
+
+	private static final int GREEN_ARGB = 0xFF00FF00;
+	private static final int RED_ARGB = 0xFFFF0000;
+
+	private static void checkMarker(Path shot, int argb, boolean expected, String what) {
+		try (NativeImage image = readImage(shot)) {
+			int inside = (int) (image.getWidth() * (CutMarker.WIDTH_FRACTION - 0.01F));
+			double band = markerFraction(image, argb, 0, inside);
+			double rest = markerFraction(image, argb, (int) (image.getWidth() * (CutMarker.WIDTH_FRACTION + 0.02F)), image.getWidth());
+			System.out.printf("[e2e] %s: marker colour covers %.4f of the left band and %.4f of the rest (%s)%n", what, band, rest, shot.getFileName());
+			if (expected) {
+				check(band == 1.0, what + ": marker band not solid (" + band + ")");
+				check(rest < 0.01, what + ": marker colour outside the band (" + rest + ")");
+			} else {
+				check(band < 0.05, what + ": unexpected marker in the band (" + band + ")");
+			}
+		}
+	}
+
+	private static double[] imageDiff(Path a, Path b) {
+		try (NativeImage x = readImage(a); NativeImage y = readImage(b)) {
+			check(x.getWidth() == y.getWidth() && x.getHeight() == y.getHeight(), "screenshot sizes differ");
+			long total = 0;
+			long over = 0;
+			int pixels = x.getWidth() * x.getHeight();
+			for (int j = 0; j < x.getHeight(); j++) {
+				for (int i = 0; i < x.getWidth(); i++) {
+					int p = x.getPixel(i, j);
+					int q = y.getPixel(i, j);
+					int worst = 0;
+					for (int shift = 0; shift <= 16; shift += 8) {
+						int delta = Math.abs(((p >> shift) & 0xFF) - ((q >> shift) & 0xFF));
+						total += delta;
+						worst = Math.max(worst, delta);
+					}
+					if (worst > 16) {
+						over++;
+					}
+				}
+			}
+			return new double[]{total / (pixels * 3.0), over / (double) pixels};
+		}
+	}
+
+	private static int currentHud(ClientGameTestContext context) {
+		return context.computeOnClient(EndToEndGameTest::hudTick);
+	}
+
+	private static void cutMarker(ClientGameTestContext context, TestServerContext server) {
+		check(ClientConfig.get().cutMarker() && !ClientConfig.get().saveMarker(), "cut marker on and save marker off by default");
+		Set<String> before = serverIds(server);
+		FRAMES.clear();
+		recordFrames = true;
+		int requests = SavestateClientNetwork.saveRequests();
+		context.getInput().pressKey(SavestateKeys.SAVE);
+		context.waitFor(mc -> SavestateClientNetwork.saveRequests() > requests && seenSaveRequests == SavestateClientNetwork.saveRequests(), 100);
+		int captured = hudTickAtCapture;
+		Map<Integer, Path> afterCapture = new HashMap<>();
+		for (int offset = 0; offset <= 3; offset++) {
+			int target = captured + offset;
+			while (currentHud(context) < target) {
+				context.waitTick();
+			}
+			int hud = currentHud(context);
+			check(hud == target, "post-capture frames ran past hud " + target + " (at " + hud + ")");
+			Path shot = context.takeScreenshot("e2e-cut-after-capture-hud" + hud);
+			afterCapture.put(hud, shot);
+			checkMarker(shot, GREEN_ARGB, false, "frame after the save at hud " + hud);
+			checkMarker(shot, RED_ARGB, false, "frame after the save at hud " + hud + " with saveMarker off");
+		}
+		String id = awaitNewState(context, server, before);
+		recordFrames = false;
+		check(FRAMES.stream().noneMatch(Frame::cut), "no cut marker during the save flow");
+		check(FRAMES.stream().noneMatch(Frame::save), "no save marker while saveMarker is off");
+		checkMarker(ThumbnailManager.file(id), GREEN_ARGB, false, "thumbnail");
+
+		server.runOnServer(s -> {
+			ServerPlayer player = onlyPlayer(s);
+			player.connection.teleport(player.getX() + 6.0, player.getY(), player.getZ(), player.getYRot() + 40.0F, player.getXRot());
+		});
+		context.waitTicks(20);
+
+		SavestateConfig original = SavestateConfig.get();
+		SavestateConfig.set(new SavestateConfig(original.allowEveryone(), original.permissionLevel(), 60));
+		int restoresBefore = SavestateClientNetwork.restoresCompleted();
+		try {
+			SavestateClientNetwork.setReadySuppressedForTesting(true);
+			FRAMES.clear();
+			recordFrames = true;
+			server.runCommand("savestate load " + id);
+			context.waitFor(mc -> SavestateClientNetwork.hasHeldReady(), 20 * 30);
+			context.waitTicks(5);
+			Path frozen = context.takeScreenshot("e2e-cut-frozen");
+			checkMarker(frozen, GREEN_ARGB, true, "frozen frame");
+			context.setScreen(() -> new PauseScreen(true));
+			context.waitTicks(3);
+			checkMarker(context.takeScreenshot("e2e-cut-frozen-over-screen"), GREEN_ARGB, true, "frozen frame under an open screen");
+			context.setScreen(() -> null);
+			context.waitTicks(3);
+			Path lastFrozen = context.takeScreenshot("e2e-cut-last-frozen");
+			checkMarker(lastFrozen, GREEN_ARGB, true, "last frozen frame");
+			check(SavestateClientNetwork.restoresCompleted() == restoresBefore, "restore resumed before the ready was released");
+			context.runOnClient(mc -> SavestateClientNetwork.releaseHeldReady());
+			context.waitFor(mc -> SavestateClientNetwork.restoresCompleted() > restoresBefore, 20 * 30);
+			int hud = currentHud(context);
+			Path resumed = context.takeScreenshot("e2e-cut-first-resumed-hud" + hud);
+			context.waitTicks(10);
+			recordFrames = false;
+			checkMarker(resumed, GREEN_ARGB, false, "first resumed frame");
+			Path reference = afterCapture.get(hud);
+			check(reference != null, "no post-capture frame at hud " + hud + " (captured at " + captured + ", have " + afterCapture.keySet() + ")");
+			double[] diff = imageDiff(reference, resumed);
+			System.out.printf("[e2e] first resumed frame vs frame after the save at hud %d: mean %.4f, over16 %.4f%%%n", hud, diff[0], diff[1] * 100);
+			check(diff[0] <= 3.0 && diff[1] <= 0.02, "first resumed frame differs from the frame after the save at hud " + hud
+					+ " (mean " + diff[0] + ", over16 " + diff[1] + ")");
+		} finally {
+			SavestateClientNetwork.setReadySuppressedForTesting(false);
+			SavestateConfig.set(original);
+		}
+
+		int firstCut = -1;
+		for (int i = 0; i < FRAMES.size(); i++) {
+			if (FRAMES.get(i).cut()) {
+				firstCut = i;
+				break;
+			}
+		}
+		check(firstCut >= 0, "no frame carried the cut marker");
+		int firstResumed = -1;
+		for (int i = firstCut; i < FRAMES.size(); i++) {
+			if (FRAMES.get(i).restores() > restoresBefore) {
+				firstResumed = i;
+				break;
+			}
+		}
+		check(firstResumed > firstCut, "no resumed frame recorded");
+		for (int i = 0; i < firstCut; i++) {
+			check(!FRAMES.get(i).restoring(), "frame " + i + " was frozen without the cut marker");
+		}
+		for (int i = firstCut; i < firstResumed; i++) {
+			check(FRAMES.get(i).cut(), "frozen frame " + i + " lacks the cut marker");
+		}
+		for (int i = firstResumed; i < FRAMES.size(); i++) {
+			check(!FRAMES.get(i).cut(), "resumed frame " + i + " carries the cut marker");
+		}
+		System.out.printf("[e2e] cut marker on %d frozen frames, first resumed frame #%d has none, %d resumed frames checked%n",
+				firstResumed - firstCut, FRAMES.get(firstResumed).frame(), FRAMES.size() - firstResumed);
+	}
+
+	private static void saveMarker(ClientGameTestContext context, TestServerContext server) {
+		ClientConfig original = ClientConfig.get();
+		ClientConfig.set(new ClientConfig(original.cutMarker(), true));
+		try {
+			Set<String> before = serverIds(server);
+			int requests = SavestateClientNetwork.saveRequests();
+			context.getInput().pressKey(SavestateKeys.SAVE);
+			context.waitFor(mc -> SavestateClientNetwork.saveRequests() > requests, 100);
+			context.waitTicks(2);
+			checkMarker(context.takeScreenshot("e2e-save-marker-on"), RED_ARGB, true, "frame right after the save with saveMarker on");
+			String id = awaitNewState(context, server, before);
+			checkMarker(ThumbnailManager.file(id), RED_ARGB, false, "thumbnail with saveMarker on");
+			context.waitTicks(CutMarker.SAVE_MARKER_TICKS + 2);
+			checkMarker(context.takeScreenshot("e2e-save-marker-gone"), RED_ARGB, false, "frame after the save marker expired");
+		} finally {
+			ClientConfig.set(original);
+		}
 	}
 }

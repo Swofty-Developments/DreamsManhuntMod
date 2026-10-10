@@ -31,6 +31,7 @@ import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
+import net.minecraft.world.level.block.entity.SpawnerBlockEntity;
 import net.minecraft.world.scores.DisplaySlot;
 import net.minecraft.world.scores.Objective;
 import net.minecraft.world.scores.ScoreHolder;
@@ -83,6 +84,8 @@ public final class EngineGameTest implements FabricClientGameTest {
 		server.runCommand("tp @a " + (playerPos.getX() + 0.5) + " " + playerPos.getY() + " " + (playerPos.getZ() + 0.5) + " 0 15");
 		server.runCommand(fill(playerPos.offset(-3, 0, 5), playerPos.offset(3, 3, 5), "minecraft:gold_block"));
 		server.runCommand(setblock(diamondPos, "minecraft:diamond_block"));
+		BlockPos spawnerPos = playerPos.offset(-3, 0, 4);
+		server.runCommand(setblock(spawnerPos, "minecraft:spawner{SpawnData:{entity:{id:\"minecraft:pig\"}}}"));
 		server.runCommand("summon minecraft:pig " + pigPos.getX() + " " + pigPos.getY() + " " + pigPos.getZ() + " {CustomName:\"" + SAVED_PIG + "\",NoAI:1b,Silent:1b}");
 		server.runCommand("clear @a");
 		server.runCommand("give @a minecraft:diamond_sword 1");
@@ -257,6 +260,8 @@ public final class EngineGameTest implements FabricClientGameTest {
 		});
 
 		context.runOnClient(mc -> {
+			check(failures, mc.level.getBlockEntity(spawnerPos) instanceof SpawnerBlockEntity spawner
+					&& spawner.getSpawner().getOrCreateDisplayEntity(mc.level, spawnerPos) != null, "client spawner display mob loads");
 			check(failures, mc.player.getCooldowns().isOnCooldown(new ItemStack(Items.ENDER_PEARL)), "client pearl cooldown restored");
 			check(failures, !mc.player.getCooldowns().isOnCooldown(new ItemStack(Items.CHORUS_FRUIT)), "client later cooldown gone");
 			check(failures, mc.player.inventoryMenu.getCraftSlots().getItem(0).is(Items.OAK_PLANKS), "client crafting grid restored");
@@ -294,6 +299,9 @@ public final class EngineGameTest implements FabricClientGameTest {
 		}
 		if (label.equals("sp") && failures.isEmpty()) {
 			this.runRollbackCheck(context, server, connection, id, playerPos.offset(1, 0, 2), failures);
+		}
+		if (label.equals("sp") && failures.isEmpty()) {
+			this.runNetherUseCheck(context, server, failures);
 		}
 		server.runOnServer(s -> SavestateEngine.get(s).delete(id));
 		if (!failures.isEmpty()) {
@@ -426,6 +434,85 @@ public final class EngineGameTest implements FabricClientGameTest {
 		context.waitFor(mc -> mc.player != null && mc.gui.screen() == null, 600);
 		context.waitTicks(5);
 		context.runOnClient(mc -> check(failures, count(mc.player.getInventory(), Items.IRON_SWORD) == 1 && count(mc.player.getInventory(), Items.FLINT) == 4, "client sees returned anvil items"));
+	}
+
+	private void runNetherUseCheck(ClientGameTestContext context, TestServerContext server, List<String> failures) {
+		server.runCommand("execute in minecraft:the_nether run forceload add -16 -16 16 16");
+		server.waitFor(s -> s.getLevel(Level.NETHER).getChunkSource().getChunkNow(0, 0) != null, 1200);
+		server.runCommand("execute in minecraft:the_nether run fill -6 99 -6 6 99 6 minecraft:netherrack");
+		server.runCommand("execute in minecraft:the_nether run fill -6 100 -6 6 116 6 minecraft:air");
+		server.runCommand("clear @a");
+		server.runCommand("effect clear @a");
+		server.runCommand("item replace entity @a weapon.mainhand with minecraft:spyglass");
+		server.runCommand("gamemode survival @a");
+		server.runCommand("execute in minecraft:the_nether run tp @a 0.5 100 0.5 0 0");
+		context.waitFor(mc -> mc.level != null && mc.level.dimension() == Level.NETHER && mc.player != null && mc.gui.screen() == null, 600);
+		context.waitTicks(20);
+		server.runOnServer(s -> firstPlayer(s).setHealth(20.0F));
+		context.getInput().holdKey(options -> options.keyUse);
+		context.waitTicks(4);
+		server.runCommand("execute in minecraft:the_nether run tp @a 0.5 107 0.5");
+		server.runOnServer(s -> {
+			ServerPlayer player = firstPlayer(s);
+			player.setRemainingFireTicks(97);
+			player.setAirSupply(150);
+		});
+		context.waitTicks(5);
+		String id = UUID.randomUUID().toString();
+		Object[] saved = server.computeOnServer(s -> {
+			try {
+				SavestateEngine.get(s).save(id, "nether-use", firstPlayer(s));
+			} catch (SavestateException e) {
+				throw new RuntimeException(e);
+			}
+			return playerState(firstPlayer(s));
+		});
+		System.out.println("[EngineGameTest] nether save state " + java.util.Arrays.toString(saved));
+		check(failures, (Boolean) saved[6] && (Double) saved[2] > 0.0, "nether check saved while falling and using the spyglass");
+		server.runCommand("execute in minecraft:overworld run tp @a 0.5 -60 0.5");
+		context.waitFor(mc -> mc.level != null && mc.level.dimension() == Level.OVERWORLD && mc.gui.screen() == null, 600);
+		context.waitTicks(10);
+		Object[] restored = server.computeOnServer(s -> {
+			try {
+				SavestateEngine.get(s).restore(id);
+			} catch (SavestateException e) {
+				throw new RuntimeException(e);
+			}
+			return playerState(firstPlayer(s));
+		});
+		System.out.println("[EngineGameTest] nether restored state " + java.util.Arrays.toString(restored));
+		check(failures, java.util.Arrays.equals(saved, restored), "nether restore puts the player back exactly: saved " + java.util.Arrays.toString(saved) + " restored " + java.util.Arrays.toString(restored));
+		context.waitTick();
+		server.runOnServer(s -> {
+			ServerPlayer player = firstPlayer(s);
+			check(failures, player.isUsingItem() && player.getUseItem().is(Items.SPYGLASS) && player.getUseItemRemainingTicks() < (Integer) saved[7],
+					"server keeps using the spyglass after restore, remaining " + player.getUseItemRemainingTicks());
+		});
+		context.getInput().releaseKey(options -> options.keyUse);
+		context.waitFor(mc -> mc.level != null && mc.level.dimension() == Level.NETHER && mc.player != null && mc.gui.screen() == null, 600);
+		context.waitTicks(30);
+		server.runOnServer(s -> {
+			ServerPlayer player = firstPlayer(s);
+			check(failures, player.isAlive() && player.level().dimension() == Level.NETHER, "player alive in the nether after restore");
+		});
+		server.runCommand("execute in minecraft:the_nether run forceload remove all");
+		server.runOnServer(s -> SavestateEngine.get(s).delete(id));
+	}
+
+	private static Object[] playerState(ServerPlayer player) {
+		return new Object[]{
+				player.level().dimension().identifier().toString(),
+				player.position(),
+				player.fallDistance,
+				player.getRemainingFireTicks(),
+				player.getAirSupply(),
+				player.getHealth(),
+				player.isUsingItem(),
+				player.getUseItemRemainingTicks(),
+				player.getDeltaMovement(),
+				player.onGround(),
+				player.getInvulnerableTime()
+		};
 	}
 
 	private void runRollbackCheck(ClientGameTestContext context, TestServerContext server, TestServerConnection connection, String id, BlockPos markerPos, List<String> failures) {

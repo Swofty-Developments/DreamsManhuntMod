@@ -2,9 +2,9 @@
 
 [<img src="https://discordapp.com/assets/e4923594e694a21542a489471ecffa50.svg" alt="Discord" height="55" />](https://discord.swofty.net)
 
-A Fabric mod for Minecraft 26.3 that savestates the entire game: the server, the world and every connected client. Press a key to save, open the menu, and click a savestate to continue from it. Footage cut from a save to its restore matches uncut footage frame for frame, down to the hunger-bar jolts.
+A Fabric mod for Minecraft 26.3 that savestates the entire game, create your very own Dream Manhunt!
 
-> **Note**: Install the mod on the server and on every player's client, runner and hunters alike.
+> **Note**: Install the mod on the server and on every player's client.
 
 ## Features
 
@@ -29,7 +29,6 @@ A Fabric mod for Minecraft 26.3 that savestates the entire game: the server, the
 
 ### HUD
 
-- Hunger-bar jolts
 - Low-health heart shake
 - Heart blink, ghost hearts and the damage flash
 - Air bubble wobble
@@ -37,6 +36,7 @@ A Fabric mod for Minecraft 26.3 that savestates the entire game: the server, the
 - Chat lines, with their fade-out timing and scroll position
 - Held-item name popup
 - Item cooldown overlays, including ender pearls
+- Hunger-bar jolts
 - Boss bars
 - Toasts in flight, including advancement and recipe toasts
 - Vignette, spyglass zoom and autosave indicator
@@ -111,6 +111,14 @@ A Fabric mod for Minecraft 26.3 that savestates the entire game: the server, the
 
 Both are under **Controls → DreamManhunt**.
 
+### Cut marker
+
+During a restore, every restoring client draws a solid `#00FF00` bar over the left 6% of the screen, on top of everything. It is on every frozen frame and gone on the first frame of resumed play, which matches the first frame after the save. To cut, remove everything from the first frame after the save through the last frame with the bar.
+
+With `saveMarker` on, a `#FF0000` bar of the same shape covers the 10 ticks after a save capture. Those frames fall inside the removed segment.
+
+Neither bar appears in thumbnails.
+
 ## Commands
 
 | Command | Description |
@@ -132,7 +140,21 @@ Both are under **Controls → DreamManhunt**.
 }
 ```
 
-The singleplayer host and players with the `dreammanhunt:manage` permission can save, load and delete. Everyone else gets a read-only menu.
+The singleplayer host and players with the `dreammanhunt:manage` permission can save, load and delete.
+
+`config/dreammanhunt-client.json` on each client:
+
+```json
+{
+  "cutMarker": true,
+  "saveMarker": false
+}
+```
+
+| Option | Default | Effect |
+|---|---|---|
+| `cutMarker` | `true` | Green bar while a restore is frozen |
+| `saveMarker` | `false` | Red bar for 10 ticks after a save capture |
 
 ## Requirements
 
@@ -154,6 +176,14 @@ Client gametests run headless:
 ```bash
 scripts/client-gametest.sh [smoke|clientstate|engine|e2e|audio|redteam|forensic|all]
 ```
+
+A dedicated server with five headless clients (runner, two hunters, a late joiner and a client without the mod's networking):
+
+```bash
+scripts/multiclient-test.sh
+```
+
+Results are in `build/multiclient/run-*/harness.log`.
 
 ## Documentation
 

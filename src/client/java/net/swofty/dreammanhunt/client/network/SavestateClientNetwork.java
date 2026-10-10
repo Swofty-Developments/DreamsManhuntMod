@@ -7,6 +7,7 @@ import net.minecraft.network.chat.Component;
 import net.swofty.dreammanhunt.DreamManhunt;
 import net.swofty.dreammanhunt.api.SavestateInfo;
 import net.swofty.dreammanhunt.client.state.ClientStateManager;
+import net.swofty.dreammanhunt.client.ui.CutMarker;
 import net.swofty.dreammanhunt.client.ui.SavestateMenuScreen;
 import net.swofty.dreammanhunt.client.ui.ThumbnailManager;
 import net.swofty.dreammanhunt.network.SavestatePayloads;
@@ -24,6 +25,7 @@ public final class SavestateClientNetwork {
 	private static int saveRequests;
 	private static int restoresCompleted;
 	private static volatile boolean readySuppressedForTesting;
+	private static volatile @Nullable Runnable heldReady;
 	private static final List<Observer> OBSERVERS = new CopyOnWriteArrayList<>();
 
 	private SavestateClientNetwork() {
@@ -41,11 +43,13 @@ public final class SavestateClientNetwork {
 		ClientPlayNetworking.registerGlobalReceiver(SavestatePayloads.Capture.TYPE, (payload, context) -> {
 			ClientStateManager.get().onCapture(payload.id());
 			ThumbnailManager.requestCapture(payload.id());
+			CutMarker.onCaptured();
 			OBSERVERS.forEach(observer -> observer.onCapture(payload.id()));
 		});
 		ClientPlayNetworking.registerGlobalReceiver(SavestatePayloads.Discard.TYPE, (payload, context) -> {
 			ClientStateManager.get().delete(payload.id());
 			ThumbnailManager.delete(payload.id());
+			CutMarker.onDiscarded();
 			OBSERVERS.forEach(observer -> observer.onDiscard(payload.id()));
 		});
 		ClientPlayNetworking.registerGlobalReceiver(SavestatePayloads.RestoreBegin.TYPE, (payload, context) -> {
@@ -54,6 +58,7 @@ public final class SavestateClientNetwork {
 				context.client().gui.setScreen(null);
 			}
 			ClientStateManager.get().onRestoreBegin(payload.id());
+			CutMarker.onRestoreBegin();
 			OBSERVERS.forEach(observer -> observer.onRestoreBegin(payload.id()));
 		});
 		ClientPlayNetworking.registerGlobalReceiver(SavestatePayloads.RestoreApply.TYPE, (payload, context) -> {
@@ -64,21 +69,24 @@ public final class SavestateClientNetwork {
 					DreamManhunt.LOGGER.warn("RestoreReady for {} sent more than once", id);
 					return;
 				}
-				if (readySuppressedForTesting) {
-					DreamManhunt.LOGGER.warn("Not sending RestoreReady for {} (suppressed for testing)", id);
-					return;
-				}
-				Minecraft.getInstance().execute(() -> {
+				Runnable send = () -> Minecraft.getInstance().execute(() -> {
 					if (ClientPlayNetworking.canSend(SavestatePayloads.RestoreReady.TYPE)) {
 						ClientPlayNetworking.send(new SavestatePayloads.RestoreReady(id));
 						OBSERVERS.forEach(observer -> observer.onReadySent(id));
 					}
 				});
+				if (readySuppressedForTesting) {
+					DreamManhunt.LOGGER.warn("Holding RestoreReady for {} (suppressed for testing)", id);
+					heldReady = send;
+					return;
+				}
+				send.run();
 			});
 			OBSERVERS.forEach(observer -> observer.onRestoreApply(id));
 		});
 		ClientPlayNetworking.registerGlobalReceiver(SavestatePayloads.RestoreResume.TYPE, (payload, context) -> {
 			ClientStateManager.get().onRestoreResume(payload.id());
+			CutMarker.onRestoreResumed();
 			restoresCompleted++;
 			OBSERVERS.forEach(observer -> observer.onRestoreResume(payload.id()));
 		});
@@ -90,6 +98,8 @@ public final class SavestateClientNetwork {
 	}
 
 	private static void reset() {
+		CutMarker.onDisconnect();
+		heldReady = null;
 		states = null;
 		canManage = false;
 		listVersion++;
@@ -130,6 +140,22 @@ public final class SavestateClientNetwork {
 
 	public static void setReadySuppressedForTesting(boolean suppressed) {
 		readySuppressedForTesting = suppressed;
+		if (!suppressed) {
+			heldReady = null;
+		}
+	}
+
+	public static boolean hasHeldReady() {
+		return heldReady != null;
+	}
+
+	public static void releaseHeldReady() {
+		Runnable send = heldReady;
+		heldReady = null;
+		readySuppressedForTesting = false;
+		if (send != null) {
+			send.run();
+		}
 	}
 
 	public static void requestList() {
@@ -147,6 +173,7 @@ public final class SavestateClientNetwork {
 			return false;
 		}
 		ClientStateManager.get().capturePending();
+		CutMarker.onCaptured();
 		saveRequests++;
 		OBSERVERS.forEach(Observer::onSaveRequested);
 		ClientPlayNetworking.send(new SavestatePayloads.SaveRequest(name));
