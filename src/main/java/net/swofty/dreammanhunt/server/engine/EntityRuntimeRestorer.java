@@ -4,6 +4,7 @@ import net.minecraft.core.UUIDUtil;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.levelgen.LegacyRandomSource;
 import net.swofty.dreammanhunt.mixin.server.EntityAccessor;
@@ -30,9 +31,12 @@ public final class EntityRuntimeRestorer {
 			return;
 		}
 		CompoundTag tag = runtime.remove(entity.getUUID());
-		if (tag == null) {
-			return;
+		if (tag != null) {
+			applyTag(entity, tag);
 		}
+	}
+
+	static void applyTag(Entity entity, CompoundTag tag) {
 		EntityAccessor accessor = (EntityAccessor) entity;
 		if (accessor.dreammanhunt$getRandom() instanceof LegacyRandomSource random) {
 			tag.getLong("seed").ifPresent(seed -> ((LegacyRandomSourceAccessor) random).dreammanhunt$getSeed().set(seed));
@@ -43,6 +47,10 @@ public final class EntityRuntimeRestorer {
 			LivingEntityAccessor living = (LivingEntityAccessor) entity;
 			tag.getInt("attack_strength").ifPresent(living::dreammanhunt$setAttackStrengthTicker);
 			tag.getInt("no_action_time").ifPresent(living::dreammanhunt$setNoActionTime);
+			tag.getInt("no_jump_delay").ifPresent(living::dreammanhunt$setNoJumpDelay);
+		}
+		if (entity instanceof Mob mob) {
+			tag.getInt("ambient_sound_time").ifPresent(ticks -> mob.ambientSoundTime = ticks);
 		}
 		if (entity instanceof Player player) {
 			tag.getInt("take_xp_delay").ifPresent(delay -> player.takeXpDelay = delay);
@@ -62,6 +70,10 @@ public final class EntityRuntimeRestorer {
 			LivingEntityAccessor living = (LivingEntityAccessor) entity;
 			tag.putInt("attack_strength", living.dreammanhunt$getAttackStrengthTicker());
 			tag.putInt("no_action_time", living.dreammanhunt$getNoActionTime());
+			tag.putInt("no_jump_delay", living.dreammanhunt$getNoJumpDelay());
+		}
+		if (entity instanceof Mob mob) {
+			tag.putInt("ambient_sound_time", mob.ambientSoundTime);
 		}
 		if (entity instanceof Player player) {
 			tag.putInt("take_xp_delay", player.takeXpDelay);

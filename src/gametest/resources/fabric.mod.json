@@ -10,6 +10,7 @@
 			"net.swofty.dreammanhunt.test.ClientStateGameTest",
 			"net.swofty.dreammanhunt.test.EngineGameTest",
 			"net.swofty.dreammanhunt.test.EndToEndGameTest",
+			"net.swofty.dreammanhunt.test.AudioGameTest",
 			"net.swofty.dreammanhunt.test.RedTeamGameTest"
 		]
 	},

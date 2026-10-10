@@ -74,6 +74,7 @@ public final class ClientSnapshot {
 		root.put("cooldowns", CooldownState.capture(minecraft.player));
 		root.put("fades", FadeState.capture(minecraft));
 		root.put("destroyProgress", captureDestroyProgress(minecraft.level));
+		root.put("audio", net.swofty.dreammanhunt.client.state.audio.AudioState.capture(minecraft));
 		LiveStates.Live live = LiveStates.create(root);
 		live.chat = new ArrayList<>(((ChatComponentAccessor) minecraft.gui.hud.getChat()).dm$getAllMessages());
 		live.particles = ParticleState.capture(minecraft);
@@ -111,6 +112,7 @@ public final class ClientSnapshot {
 		camera.attributeProbe().reset();
 		camera.attributeProbe().tick(minecraft.level, camera.position());
 		minecraft.level.environmentAttributes().invalidateTickCache();
+		net.swofty.dreammanhunt.client.state.audio.AudioState.apply(minecraft, root.getCompoundOrEmpty("audio"));
 	}
 
 	public static void resume(Minecraft minecraft, CompoundTag root) {

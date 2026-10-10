@@ -1,6 +1,7 @@
 package net.swofty.dreammanhunt.server.engine;
 
 import java.io.IOException;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -51,6 +52,24 @@ final class SnapshotFiles {
 				return FileVisitResult.CONTINUE;
 			}
 		});
+	}
+
+	static void moveTree(Path from, Path to, Set<String> topLevelExclusions) throws IOException {
+		Files.createDirectories(to);
+		try (Stream<Path> children = Files.list(from)) {
+			for (Path child : children.toList()) {
+				String name = child.getFileName().toString();
+				if (topLevelExclusions.contains(name)) {
+					continue;
+				}
+				Path target = to.resolve(name);
+				try {
+					Files.move(child, target, StandardCopyOption.ATOMIC_MOVE);
+				} catch (AtomicMoveNotSupportedException e) {
+					Files.move(child, target);
+				}
+			}
+		}
 	}
 
 	static void clearTree(Path root, Set<String> topLevelExclusions) throws IOException {

@@ -28,6 +28,10 @@
 		{
 			"config": "dreammanhunt.clientui.mixins.json",
 			"environment": "client"
+		},
+		{
+			"config": "dreammanhunt.audio.mixins.json",
+			"environment": "client"
 		}
 	],
 	"depends": {
