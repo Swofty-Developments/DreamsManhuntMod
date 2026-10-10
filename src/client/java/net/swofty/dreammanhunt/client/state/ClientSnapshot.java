@@ -2,12 +2,10 @@ package net.swofty.dreammanhunt.client.state;
 
 import com.mojang.serialization.DynamicOps;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.WeakHashMap;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -23,6 +21,8 @@ import net.minecraft.nbt.NbtOps;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.BlockDestructionProgress;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
@@ -53,7 +53,6 @@ import net.swofty.dreammanhunt.client.mixin.state.WalkAnimationStateAccessor;
 public final class ClientSnapshot {
 	public static final int FORMAT = 1;
 	private static final double SAME_POSITION_EPSILON = 1.0E-3;
-	private static final Map<CompoundTag, List<GuiMessage>> LIVE_CHAT = Collections.synchronizedMap(new WeakHashMap<>());
 
 	private ClientSnapshot() {
 	}
@@ -72,8 +71,13 @@ public final class ClientSnapshot {
 		root.put("entities", captureEntities(minecraft));
 		root.put("chat", captureChat(minecraft, ops));
 		root.put("options", OptionsState.capture(minecraft));
-		List<GuiMessage> liveChat = new ArrayList<>(((ChatComponentAccessor) minecraft.gui.hud.getChat()).dm$getAllMessages());
-		LIVE_CHAT.put(root, liveChat);
+		root.put("cooldowns", CooldownState.capture(minecraft.player));
+		root.put("fades", FadeState.capture(minecraft));
+		root.put("destroyProgress", captureDestroyProgress(minecraft.level));
+		LiveStates.Live live = LiveStates.create(root);
+		live.chat = new ArrayList<>(((ChatComponentAccessor) minecraft.gui.hud.getChat()).dm$getAllMessages());
+		live.particles = ParticleState.capture(minecraft);
+		live.overlays = OverlayState.capture(minecraft);
 		return root;
 	}
 
@@ -83,11 +87,20 @@ public final class ClientSnapshot {
 
 	public static void apply(Minecraft minecraft, CompoundTag root) {
 		DynamicOps<Tag> ops = minecraft.level.registryAccess().createSerializationContext(NbtOps.INSTANCE);
-		minecraft.particleEngine.clearParticles();
-		ClientLevelAccessor levelAccessor = (ClientLevelAccessor) minecraft.level;
-		levelAccessor.dm$getDestroyingBlocks().clear();
-		levelAccessor.dm$getDestructionProgress().clear();
-		minecraft.gui.toastManager().clear();
+		LiveStates.Live live = LiveStates.get(root);
+		if (live != null && live.particles != null) {
+			ParticleState.apply(minecraft, live.particles);
+		} else {
+			minecraft.particleEngine.clearParticles();
+		}
+		if (live != null && live.overlays != null) {
+			OverlayState.apply(minecraft, live.overlays);
+		} else {
+			minecraft.gui.toastManager().clear();
+		}
+		applyDestroyProgress(minecraft.level, root.getListOrEmpty("destroyProgress"));
+		CooldownState.apply(minecraft.player, root.getCompoundOrEmpty("cooldowns"));
+		FadeState.apply(minecraft, root.getCompoundOrEmpty("fades"));
 		applyHud(minecraft, root.getCompoundOrEmpty("hud"), ops);
 		applyRenderer(minecraft, root.getCompoundOrEmpty("renderer"));
 		applyPlayer(minecraft.player, root.getCompoundOrEmpty("player"), ops);
@@ -119,6 +132,12 @@ public final class ClientSnapshot {
 		root.put("renderer", captureRenderer(minecraft));
 		root.put("player", capturePlayer(minecraft.player, ops));
 		root.put("level", captureLevel(minecraft.level));
+		root.put("entities", captureEntities(minecraft));
+		root.put("cooldowns", CooldownState.capture(minecraft.player));
+		root.put("fades", FadeState.capture(minecraft));
+		root.put("destroyProgress", captureDestroyProgress(minecraft.level));
+		root.putInt("particles", ParticleState.count(minecraft));
+		root.putInt("toasts", OverlayState.visibleToastCount(minecraft));
 		return root;
 	}
 
@@ -578,6 +597,8 @@ public final class ClientSnapshot {
 			}
 			CompoundTag tag = entity instanceof LivingEntity living ? captureLiving(living) : new CompoundTag();
 			tag.putString("uuid", entity.getUUID().toString());
+			tag.putString("class", entity.getClass().getName());
+			tag.put("anim", EntityAnimations.capture(entity));
 			tag.putInt("tickCount", entity.tickCount);
 			list.add(tag);
 		}
@@ -607,6 +628,37 @@ public final class ClientSnapshot {
 			} else {
 				entity.tickCount = tag.getIntOr("tickCount", entity.tickCount);
 			}
+			if (entity.getClass().getName().equals(tag.getStringOr("class", ""))) {
+				EntityAnimations.apply(entity, tag.getCompoundOrEmpty("anim"));
+			}
+		}
+	}
+
+	private static ListTag captureDestroyProgress(ClientLevel level) {
+		ListTag list = new ListTag();
+		for (BlockDestructionProgress progress : ((ClientLevelAccessor) level).dm$getDestroyingBlocks().values()) {
+			CompoundTag tag = new CompoundTag();
+			tag.putInt("id", progress.getId());
+			tag.putLong("pos", progress.getPos().asLong());
+			tag.putInt("progress", progress.getProgress());
+			tag.putLong("tick", progress.getUpdatedRenderTick());
+			list.add(tag);
+		}
+		return list;
+	}
+
+	private static void applyDestroyProgress(ClientLevel level, ListTag list) {
+		ClientLevelAccessor accessor = (ClientLevelAccessor) level;
+		accessor.dm$getDestroyingBlocks().clear();
+		accessor.dm$getDestructionProgress().clear();
+		for (Tag raw : list) {
+			if (raw instanceof CompoundTag tag) {
+				BlockDestructionProgress progress = new BlockDestructionProgress(tag.getIntOr("id", 0), BlockPos.of(tag.getLongOr("pos", 0L)));
+				progress.setProgress(tag.getIntOr("progress", 0));
+				progress.updateTick(tag.getLongOr("tick", 0L));
+				accessor.dm$getDestroyingBlocks().put(progress.getId(), progress);
+				accessor.dm$getDestructionProgress().computeIfAbsent(progress.getPos().asLong(), key -> new java.util.TreeSet<>()).add(progress);
+			}
 		}
 	}
 
@@ -632,7 +684,8 @@ public final class ClientSnapshot {
 		if (tag.isEmpty()) {
 			return;
 		}
-		List<GuiMessage> restored = LIVE_CHAT.get(root);
+		LiveStates.Live live = LiveStates.get(root);
+		List<GuiMessage> restored = live != null ? live.chat : null;
 		if (restored == null) {
 			restored = new ArrayList<>();
 			for (Tag raw : tag.getListOrEmpty("messages")) {
@@ -650,7 +703,6 @@ public final class ClientSnapshot {
 					restored.add(new GuiMessage(entry.getIntOr("t", 0), content, null, source, null));
 				}
 			}
-			LIVE_CHAT.put(root, restored);
 		}
 		ChatComponentAccessor chat = (ChatComponentAccessor) minecraft.gui.hud.getChat();
 		List<GuiMessage> messages = chat.dm$getAllMessages();
