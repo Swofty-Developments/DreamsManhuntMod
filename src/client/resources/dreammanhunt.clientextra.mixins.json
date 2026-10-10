@@ -3,8 +3,10 @@
 	"package": "net.swofty.dreammanhunt.client.mixin.extra",
 	"compatibilityLevel": "JAVA_25",
 	"client": [
+		"ClientLevelAnimateMixin",
 		"ItemEntityAccessor",
 		"NeedleDirectionHelperMixin",
+		"ParticleRandomMixin",
 		"PhantomMixin",
 		"PhantomRendererMixin",
 		"WitchRendererMixin"

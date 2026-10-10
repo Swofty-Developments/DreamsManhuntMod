@@ -26,6 +26,7 @@ public final class ExtraState {
 			CompoundTag tag = new CompoundTag();
 			tag.put("blockEntities", BlockEntityAnimations.capture(minecraft));
 			tag.put("itemBob", captureItemBob(minecraft));
+			tag.put("random", RandomStates.capture(minecraft));
 			root.put("extra", tag);
 			WOBBLERS.put(root, NeedleWobblers.capture());
 		} catch (Throwable t) {
@@ -38,6 +39,7 @@ public final class ExtraState {
 			CompoundTag tag = root.getCompoundOrEmpty("extra");
 			BlockEntityAnimations.apply(minecraft, tag.getCompoundOrEmpty("blockEntities"));
 			applyItemBob(minecraft, tag.getCompoundOrEmpty("itemBob"));
+			RandomStates.apply(minecraft, tag.getCompoundOrEmpty("random"));
 			Map<NeedleDirectionHelper.Wobbler, Object[]> wobblers = WOBBLERS.get(root);
 			if (wobblers != null) {
 				NeedleWobblers.apply(wobblers);
