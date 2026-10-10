@@ -261,7 +261,10 @@ public final class ClientStateManager {
 			return null;
 		}
 		try {
-			return ClientSnapshot.capture(minecraft);
+			long started = Util.getNanos();
+			CompoundTag tag = ClientSnapshot.capture(minecraft);
+			LOGGER.info("Captured client state at hud tick {} in {} us", tag.getCompoundOrEmpty("timing").getIntOr("hudTickCount", -1), (Util.getNanos() - started) / 1000L);
+			return tag;
 		} catch (Throwable t) {
 			LOGGER.error("Failed to capture client state", t);
 			return null;

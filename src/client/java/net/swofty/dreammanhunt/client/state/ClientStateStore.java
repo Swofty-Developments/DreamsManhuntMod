@@ -4,6 +4,8 @@ import com.mojang.logging.LogUtils;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.regex.Pattern;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.nbt.CompoundTag;
@@ -15,6 +17,11 @@ import org.slf4j.Logger;
 final class ClientStateStore {
 	private static final Logger LOGGER = LogUtils.getLogger();
 	private static final Pattern SAFE_ID = Pattern.compile("[A-Za-z0-9._-]{1,128}");
+	private static final ExecutorService IO = Executors.newSingleThreadExecutor(runnable -> {
+		Thread thread = new Thread(runnable, "DreamManhunt client state IO");
+		thread.setDaemon(true);
+		return thread;
+	});
 
 	private ClientStateStore() {
 	}
@@ -41,6 +48,10 @@ final class ClientStateStore {
 			LOGGER.warn("Refusing to store client state with unsafe id {}", id);
 			return;
 		}
+		IO.execute(() -> writeNow(id, file, tag));
+	}
+
+	private static void writeNow(String id, Path file, CompoundTag tag) {
 		try {
 			Files.createDirectories(file.getParent());
 			Path temp = file.resolveSibling(id + ".nbt.tmp");
@@ -69,6 +80,10 @@ final class ClientStateStore {
 		if (file == null) {
 			return;
 		}
+		IO.execute(() -> deleteNow(id, file));
+	}
+
+	private static void deleteNow(String id, Path file) {
 		try {
 			Files.deleteIfExists(file);
 		} catch (IOException e) {
