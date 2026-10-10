@@ -2,7 +2,9 @@
 	"required": true,
 	"package": "net.swofty.dreammanhunt.client.mixin.ui",
 	"compatibilityLevel": "JAVA_25",
-	"client": [],
+	"client": [
+		"GameRendererMixin"
+	],
 	"injectors": {
 		"defaultRequire": 1
 	},
