@@ -229,6 +229,11 @@ public final class ClientStateManager {
 		if (!resumed) {
 			VisualClock.unfreeze();
 		}
+		try {
+			PhysicalKeys.sync(minecraft);
+		} catch (Throwable t) {
+			LOGGER.warn("Could not resync held keys after restore {}", this.restoringId, t);
+		}
 		this.reset();
 	}
 
