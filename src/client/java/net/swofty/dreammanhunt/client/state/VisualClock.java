@@ -26,6 +26,10 @@ public final class VisualClock {
 		}
 	}
 
+	public static void freezeAt(long visualNanos) {
+		frozenAtNanos = visualNanos;
+	}
+
 	public static void resumeAt(long visualNanos) {
 		offsetNanos = visualNanos - base.getAsLong();
 		frozenAtNanos = Long.MIN_VALUE;

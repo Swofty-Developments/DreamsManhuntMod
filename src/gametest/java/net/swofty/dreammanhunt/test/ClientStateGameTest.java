@@ -46,6 +46,8 @@ public final class ClientStateGameTest implements FabricClientGameTest {
 				runRound(context, singleplayer, round);
 			}
 			runMotionRound(context, singleplayer);
+			runScreenRound(context, singleplayer, "inventory");
+			runScreenRound(context, singleplayer, "chat");
 		} finally {
 			context.runOnClient(mc -> VisualClock.useBaseSource(net.minecraft.util.Util::getNanos));
 		}
@@ -332,6 +334,58 @@ public final class ClientStateGameTest implements FabricClientGameTest {
 			compare(afterCapture.get(i), afterResume.get(i));
 		}
 		singleplayer.getServer().runCommand("gamerule advance_time true");
+		context.runOnClient(mc -> ClientStateManager.get().delete(id));
+	}
+
+	private void runScreenRound(ClientGameTestContext context, TestSingleplayerContext singleplayer, String kind) {
+		String id = STATE_ID + "-screen-" + kind;
+		singleplayer.getServer().runCommand("tick freeze");
+		context.runOnClient(mc -> {
+			if (kind.equals("inventory")) {
+				mc.gui.setScreen(new net.minecraft.client.gui.screens.inventory.InventoryScreen(mc.player));
+			} else {
+				net.minecraft.client.gui.screens.ChatScreen chat = new net.minecraft.client.gui.screens.ChatScreen("half typed message", false);
+				mc.gui.setScreen(chat);
+			}
+		});
+		context.getInput().setCursorPos(300, 260);
+		context.waitTicks(10);
+		if (kind.equals("chat")) {
+			context.getInput().pressKey(com.mojang.blaze3d.platform.InputConstants.KEY_LEFT);
+		}
+		context.waitTicks(3);
+		CompoundTag[] captured = new CompoundTag[1];
+		context.runOnClient(mc -> {
+			ClientStateManager.get().capturePending();
+			ClientStateManager.get().onCapture(id);
+			captured[0] = ClientSnapshot.counters(mc);
+		});
+		List<Path> afterCapture = new ArrayList<>();
+		List<Integer> captureTicks = new ArrayList<>();
+		recordFrames(context, "screen-" + kind + "-capture", afterCapture, captureTicks);
+		context.runOnClient(mc -> mc.gui.setScreen(null));
+		context.getInput().setCursorPos(20, 20);
+		context.waitTicks(20);
+		AtomicBoolean ready = new AtomicBoolean();
+		context.runOnClient(mc -> {
+			ClientStateManager.get().onRestoreBegin(id);
+			ClientStateManager.get().onRestoreApply(id, () -> ready.set(true));
+		});
+		context.waitFor(mc -> ready.get(), 20 * 20);
+		context.waitTicks(3);
+		context.runOnClient(mc -> ClientStateManager.get().onRestoreResume(id));
+		String screen = context.computeOnClient(mc -> mc.gui.screen() == null ? "none" : mc.gui.screen().getClass().getSimpleName());
+		System.out.println("[clientstate] screen round " + kind + ": open after resume = " + screen);
+		List<Path> afterResume = new ArrayList<>();
+		List<Integer> resumeTicks = new ArrayList<>();
+		recordFrames(context, "screen-" + kind + "-resume", afterResume, resumeTicks);
+		context.runOnClient(mc -> mc.gui.setScreen(null));
+		if (!captureTicks.equals(resumeTicks)) {
+			throw new AssertionError("Hud.tickCount sequence differs: " + captureTicks + " vs " + resumeTicks);
+		}
+		for (int i = 0; i < afterCapture.size(); i++) {
+			compare(afterCapture.get(i), afterResume.get(i));
+		}
 		context.runOnClient(mc -> ClientStateManager.get().delete(id));
 	}
 

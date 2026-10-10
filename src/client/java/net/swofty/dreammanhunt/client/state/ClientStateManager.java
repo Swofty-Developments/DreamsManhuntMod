@@ -117,6 +117,13 @@ public final class ClientStateManager {
 		return this.phase != Phase.IDLE;
 	}
 
+	public float barrierPartialTick() {
+		if (this.phase != Phase.APPLIED || this.restoring == null) {
+			return Float.NaN;
+		}
+		return this.restoring.getCompoundOrEmpty("timing").getFloatOr("deltaTickResidual", Float.NaN);
+	}
+
 	public @Nullable CompoundTag snapshot(String stateId) {
 		return this.load(stateId);
 	}
@@ -198,6 +205,7 @@ public final class ClientStateManager {
 		}
 		try {
 			ClientSnapshot.apply(minecraft, this.restoring);
+			ClientSnapshot.applyBarrierTiming(minecraft, this.restoring);
 		} catch (Throwable t) {
 			LOGGER.error("Failed to apply client state {}", this.restoringId, t);
 		}

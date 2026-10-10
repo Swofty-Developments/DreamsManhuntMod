@@ -74,6 +74,7 @@ public final class ClientSnapshot {
 		root.put("cooldowns", CooldownState.capture(minecraft.player));
 		root.put("fades", FadeState.capture(minecraft));
 		root.put("destroyProgress", captureDestroyProgress(minecraft.level));
+		root.put("screen", ScreenState.capture(minecraft));
 		root.put("audio", net.swofty.dreammanhunt.client.state.audio.AudioState.capture(minecraft));
 		net.swofty.dreammanhunt.client.state.extra.ExtraState.capture(minecraft, root);
 		LiveStates.Live live = LiveStates.create(root);
@@ -115,6 +116,7 @@ public final class ClientSnapshot {
 		camera.attributeProbe().tick(minecraft.level, camera.position());
 		minecraft.level.environmentAttributes().invalidateTickCache();
 		net.swofty.dreammanhunt.client.state.audio.AudioState.apply(minecraft, root.getCompoundOrEmpty("audio"));
+		ScreenState.apply(minecraft, root.getCompoundOrEmpty("screen"));
 	}
 
 	public static void resume(Minecraft minecraft, CompoundTag root) {
@@ -126,6 +128,15 @@ public final class ClientSnapshot {
 			}
 		}
 		applyTiming(minecraft, root.getCompoundOrEmpty("timing"));
+	}
+
+	public static void applyBarrierTiming(Minecraft minecraft, CompoundTag root) {
+		applyTextures(minecraft, root.getCompoundOrEmpty("textures"));
+		CompoundTag timing = root.getCompoundOrEmpty("timing");
+		applyTiming(minecraft, timing);
+		if (timing.contains("visualNanos")) {
+			VisualClock.freezeAt(timing.getLongOr("visualNanos", VisualClock.nanos()));
+		}
 	}
 
 	public static CompoundTag counters(Minecraft minecraft) {
