@@ -1,5 +1,7 @@
 package net.swofty.dreammanhunt.server.engine;
 
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.UUIDUtil;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -23,6 +25,7 @@ import net.minecraft.world.item.ItemCooldowns;
 import net.minecraft.world.item.ItemStack;
 import net.swofty.dreammanhunt.mixin.server.CooldownInstanceAccessor;
 import net.swofty.dreammanhunt.mixin.server.ItemCooldownsAccessor;
+import net.swofty.dreammanhunt.mixin.server.ServerPlayerGameModeAccessor;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -47,6 +50,7 @@ final class PlayerRuntime {
 			entries.add(cooldown);
 		}
 		tag.put("cooldowns", entries);
+		tag.put("mining", captureMining(player));
 
 		RegistryOps<Tag> ops = player.registryAccess().createSerializationContext(NbtOps.INSTANCE);
 		AbstractContainerMenu menu = player.containerMenu;
@@ -85,6 +89,42 @@ final class PlayerRuntime {
 			if (group != null && end > now) {
 				player.connection.send(new ClientboundCooldownPacket(group, end - now));
 			}
+		}
+	}
+
+	private static CompoundTag captureMining(ServerPlayer player) {
+		ServerPlayerGameModeAccessor mode = (ServerPlayerGameModeAccessor) player.gameMode;
+		CompoundTag tag = new CompoundTag();
+		tag.putInt("game_ticks", mode.dreammanhunt$getGameTicks());
+		tag.putBoolean("destroying", mode.dreammanhunt$isDestroyingBlock());
+		tag.store("destroy_pos", BlockPos.CODEC, mode.dreammanhunt$getDestroyPos());
+		tag.store("destroy_direction", Direction.CODEC, mode.dreammanhunt$getDestroyDirection());
+		tag.putInt("destroy_start", mode.dreammanhunt$getDestroyProgressStart());
+		tag.putBoolean("delayed", mode.dreammanhunt$hasDelayedDestroy());
+		tag.store("delayed_pos", BlockPos.CODEC, mode.dreammanhunt$getDelayedDestroyPos());
+		tag.putInt("delayed_start", mode.dreammanhunt$getDelayedTickStart());
+		tag.putInt("last_sent_state", mode.dreammanhunt$getLastSentState());
+		return tag;
+	}
+
+	static void applyMining(ServerPlayer player, CompoundTag runtime) {
+		CompoundTag tag = runtime.getCompoundOrEmpty("mining");
+		if (tag.isEmpty()) {
+			return;
+		}
+		ServerPlayerGameModeAccessor mode = (ServerPlayerGameModeAccessor) player.gameMode;
+		mode.dreammanhunt$setGameTicks(tag.getIntOr("game_ticks", 0));
+		mode.dreammanhunt$setDestroyingBlock(tag.getBooleanOr("destroying", false));
+		mode.dreammanhunt$setDestroyPos(tag.read("destroy_pos", BlockPos.CODEC).orElse(BlockPos.ZERO));
+		mode.dreammanhunt$setDestroyDirection(tag.read("destroy_direction", Direction.CODEC).orElse(Direction.DOWN));
+		mode.dreammanhunt$setDestroyProgressStart(tag.getIntOr("destroy_start", 0));
+		mode.dreammanhunt$setDelayedDestroy(tag.getBooleanOr("delayed", false));
+		mode.dreammanhunt$setDelayedDestroyPos(tag.read("delayed_pos", BlockPos.CODEC).orElse(BlockPos.ZERO));
+		mode.dreammanhunt$setDelayedTickStart(tag.getIntOr("delayed_start", 0));
+		int lastSent = tag.getIntOr("last_sent_state", -1);
+		mode.dreammanhunt$setLastSentState(lastSent);
+		if (mode.dreammanhunt$isDestroyingBlock() && lastSent >= 0) {
+			player.level().destroyBlockProgress(player.getId(), mode.dreammanhunt$getDestroyPos(), lastSent);
 		}
 	}
 

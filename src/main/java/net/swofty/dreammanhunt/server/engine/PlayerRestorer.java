@@ -188,6 +188,7 @@ final class PlayerRestorer {
 			if (runtime != null) {
 				PlayerRuntime.applyCooldowns(player, runtime);
 				PlayerRuntime.applyMenu(player, runtime);
+				PlayerRuntime.applyMining(player, runtime);
 			}
 
 			level.addRespawnedPlayer(player);
