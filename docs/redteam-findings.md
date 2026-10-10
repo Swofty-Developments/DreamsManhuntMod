@@ -292,3 +292,56 @@ This closes finding 11 at the root: the bolt shape comes from the UUID that the 
 | `hotbar_pop` | command | not run | 5.591% |
 
 All small residuals above 0 (≤0.8%) that were inspected are single sub-pixel edges or one changed particle. The rest were not inspected one by one in the time box.
+
+### Follow-up runs
+
+"Follow-up full run" is this branch with findings 17-19 and 22 fixed, before merging main `5d0c035`. The Nether scenes in it still used the broken setup. "Targeted run" is on main `5d0c035` with the fixed Nether setup. The logs are `build/redteam-final2.log` and the `[redteam]` lines.
+
+| Scene | Previous report | Follow-up full run | Targeted run on main `5d0c035` |
+|---|---|---|---|
+| `baseline` | 0.000% | 0.000% | — |
+| `nether_portal` | 0.194% | 0.000% | — |
+| `end_portal_gateway` | 0.000% | 0.000% | — |
+| `beacon` | 0.091% | 3.118% | 0.292% |
+| `conduit` | 0.011% | 1.184% | — |
+| `enchanting_table` | 0.764% | 0.000% | — |
+| `spawners` | 0.016% | 2.664% | 0.413% |
+| `campfire_fire` | 6.342% | 0.000% | — |
+| `fluids` | 6.723% | 7.083% | — |
+| `items_orbs_frames` | 0.000% | 0.169% | — |
+| `xp_orbs` | 0.019% | 0.019% | — |
+| `armor_stands` | 0.000% | 0.000% | — |
+| `mobs_land` | 0.169% | 0.194% | — |
+| `mobs_air_water` | 0.368% | 0.341% | — |
+| `third_person_self` | 0.018% | 0.018% | — |
+| `night_sky` | 0.000% | 0.000% | — |
+| `moon_phase` | 0.000% | 0.000% | — |
+| `sunset` | 0.025% | 0.025% | — |
+| `clouds` | 0.000% | 0.000% | — |
+| `rain` | 0.000% | 0.000% | — |
+| `snow` | 8.626% | 0.000% | — |
+| `thunder` | 0.000% | 0.000% | — |
+| `underwater` | 0.639% | 0.477% | — |
+| `nether` | 64.198% | 45.699% | 0.000% |
+| `end_sky` | 0.031% | 0.268% | — |
+| `blindness` | 0.000% | 0.000% | — |
+| `darkness` | 0.000% | 0.000% | — |
+| `nausea` | 0.000% | 0.000% | — |
+| `night_vision` | 0.000% | 0.000% | — |
+| `inventory_glint` | 98.377% | 98.416% | — |
+| `f3_debug` | 0.047% | 0.038% | — |
+| `f1_hidden` | 0.000% | 0.000% | — |
+| `low_health_shake` | 0.382% | 0.382% | — |
+| `elytra` | 9.418% | 21.867% | — |
+| `spyglass` | 59.973% | 59.973% | — |
+| `map_item` | 0.000% | 0.000% | — |
+| `compass` | 0.438% | 0.438% | 0.438% |
+| `recovery_compass` | 0.166% | 0.408% | 1.556% |
+| `clock` | 0.000% | 0.000% | 0.000% |
+| `lodestone_compass` | 0.791% | 0.774% | 0.699% |
+| `nether_compass_clock` | 74.647% | 60.820% | 1.780% |
+| `walking` | 7.762% | 7.762% | — |
+| `id_phase_mobs` | 0.169% | 0.000% | — |
+| `heads_bell_shulker` | 0.000% | 0.000% | — |
+| `lightning_obfuscated` | 5.739% | 0.000% | — |
+| `hotbar_pop` | 5.591% | 0.000% | — |
