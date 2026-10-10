@@ -1,0 +1,19 @@
+{
+	"required": true,
+	"package": "net.swofty.dreammanhunt.mixin.randomroot",
+	"compatibilityLevel": "JAVA_25",
+	"mixins": [
+		"EntityTypeMixin",
+		"MinecraftServerMixin",
+		"RandomSourceRegistryMixin",
+		"RandomSupportMixin",
+		"SpreadPlayersCommandMixin",
+		"ThreadLocalRandomCallsMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	},
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}

@@ -1,0 +1,22 @@
+{
+	"required": true,
+	"package": "net.swofty.dreammanhunt.client.mixin.extra",
+	"compatibilityLevel": "JAVA_25",
+	"client": [
+		"AddEntitySeedMixin",
+		"ClientLevelAnimateMixin",
+		"FontAccessor",
+		"ItemEntityAccessor",
+		"MinecraftThreadMixin",
+		"NeedleDirectionHelperMixin",
+		"PhantomMixin",
+		"PhantomRendererMixin",
+		"WitchRendererMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	},
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}
