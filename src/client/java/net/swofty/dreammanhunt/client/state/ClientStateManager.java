@@ -12,7 +12,6 @@ import org.slf4j.Logger;
 public final class ClientStateManager {
 	private static final Logger LOGGER = LogUtils.getLogger();
 	private static final ClientStateManager INSTANCE = new ClientStateManager();
-	private static final long PENDING_MAX_AGE_MS = 2_000L;
 	private static final long READY_TIMEOUT_MS = 15_000L;
 	private static final long RESUME_TIMEOUT_MS = 30_000L;
 	private static final long READY_STABLE_MS = 250L;
@@ -54,7 +53,7 @@ public final class ClientStateManager {
 		if (this.captureRequestedInTick) {
 			this.finishDeferredCapture();
 		}
-		CompoundTag tag = this.pending != null && Util.getMillis() - this.pendingAtMs < PENDING_MAX_AGE_MS ? this.pending : this.captureSafely();
+		CompoundTag tag = this.captureSafely();
 		this.pending = null;
 		if (tag == null) {
 			return;

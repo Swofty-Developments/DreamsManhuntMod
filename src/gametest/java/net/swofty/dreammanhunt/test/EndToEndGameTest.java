@@ -306,8 +306,8 @@ public final class EndToEndGameTest implements FabricClientGameTest {
 
 		context.getInput().pressKey(SavestateKeys.SAVE);
 		String id = awaitNewState(context, server, before);
-		int captured = hudTickAtCapture;
-		check(captured >= 0, "no Hud.tickCount recorded at capture");
+		int captured = context.computeOnClient(mc -> ClientStateManager.get().snapshot(id).getCompoundOrEmpty("timing").getIntOr("hudTickCount", -1));
+		check(captured >= hudTickAtCapture && hudTickAtCapture >= 0, "snapshot hud tick " + captured + " is before the save key tick " + hudTickAtCapture);
 
 		mutate(server, base);
 		context.waitTicks(20);

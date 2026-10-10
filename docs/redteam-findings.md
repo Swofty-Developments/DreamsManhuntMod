@@ -345,3 +345,11 @@ All small residuals above 0 (≤0.8%) that were inspected are single sub-pixel e
 | `heads_bell_shulker` | 0.000% | 0.000% | — |
 | `lightning_obfuscated` | 5.739% | 0.000% | — |
 | `hotbar_pop` | 5.591% | 0.000% | — |
+
+### 25. Key-initiated saves captured the initiator one tick early (b) — fixed
+
+Location: `client.state.ClientStateManager.onCapture`, which bound the pending capture taken at the key press by `SavestateClientNetwork.requestSave`.
+
+The server snapshots when it handles `SaveRequest`, one tick after the key press. After a key-initiated save, the restored server therefore ran one tick ahead of the restored client. The per-frame trace of `beacon` showed client game time 124 vs 123, with levels, `lastCheckY`, beam sections and list aliasing identical in both timelines. The differing pixels sat along the beam, whose scroll is `gameTime % 40 + partialTick`.
+
+Every client now captures when `Capture` arrives, the same moment as clients of a console save. `beacon` went from 0.29% to 0.000%. `low_health_shake` went from 0.38% to 0.000%: its one-frame heart blink (finding 9) was this offset too. `items_orbs_frames` and `mobs_land` (key + menu) and `rain` stay at 0.000%. The `e2e` and `clientstate` suites pass. The end-to-end check now compares the resume tick with the snapshot's hud tick instead of the key-press tick.
