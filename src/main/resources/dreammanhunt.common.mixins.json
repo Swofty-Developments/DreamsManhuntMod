@@ -2,7 +2,12 @@
 	"required": true,
 	"package": "net.swofty.dreammanhunt.mixin.common",
 	"compatibilityLevel": "JAVA_25",
-	"mixins": [],
+	"mixins": [
+		"MinecraftServerMixin",
+		"ServerGamePacketListenerImplMixin",
+		"ServerPlayerMixin",
+		"TickRateManagerMixin"
+	],
 	"injectors": {
 		"defaultRequire": 1
 	},
