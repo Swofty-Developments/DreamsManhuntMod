@@ -7,6 +7,7 @@ import com.mojang.serialization.JsonOps;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.Util;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.gamerules.GameRuleMap;
 import net.minecraft.world.level.storage.LevelResource;
@@ -140,6 +141,7 @@ public final class SavestateEngine {
 		}
 
 		long started = System.nanoTime();
+		RuntimeState live = RuntimeState.capture(this.server);
 		WorldRebuilder world = new WorldRebuilder(this.server);
 		PlayerRestorer players = new PlayerRestorer(this.server);
 
@@ -147,25 +149,91 @@ public final class SavestateEngine {
 		world.detachCustomBossEvents();
 		BossBarRegistry.detachEveryone();
 		List<PlayerRestorer.Detached> detached = players.detachAll();
+		world.flushGlobalData();
+		long detachedAt = System.nanoTime();
 		world.closeLevels();
+		long closedAt = System.nanoTime();
 
+		Path backup = this.statesDir.getParent().resolve("restore-backup-" + id + "-" + System.currentTimeMillis());
+		boolean copyStarted = false;
+		long copiedAt;
 		try {
-			SnapshotFiles.clearTree(this.worldDir, SnapshotFiles.WORLD_EXCLUSIONS);
+			SnapshotFiles.moveTree(this.worldDir, backup, SnapshotFiles.WORLD_EXCLUSIONS);
+			Failpoint.check("copy");
+			copyStarted = true;
 			SnapshotFiles.copyTree(snapshotWorld, this.worldDir, Set.of());
-		} catch (IOException e) {
-			throw new SavestateException("Failed to copy savestate " + id + " into the world folder", e);
+			copiedAt = System.nanoTime();
+			this.rebuild(runtime, world, players, detached, false);
+		} catch (Throwable failure) {
+			this.rollBack(id, failure, live, world, players, detached, backup, copyStarted);
+			return;
 		}
+		long rebuiltAt = System.nanoTime();
+		deleteInBackground(backup);
+		LOGGER.info(
+				"Restored savestate {} in {} ms (detach+flush {} ms, close levels {} ms, swap files {} ms, rebuild {} ms)",
+				id,
+				(rebuiltAt - started) / 1_000_000L,
+				(detachedAt - started) / 1_000_000L,
+				(closedAt - detachedAt) / 1_000_000L,
+				(copiedAt - closedAt) / 1_000_000L,
+				(rebuiltAt - copiedAt) / 1_000_000L
+		);
+	}
 
-		runtime.applyLevelData(this.server);
+	private void rebuild(RuntimeState state, WorldRebuilder world, PlayerRestorer players, List<PlayerRestorer.Detached> detached, boolean preferLive) {
+		state.applyLevelData(this.server);
 		GameRuleMap restoredRules = world.reloadGlobalData();
-		runtime.armEntityRuntime();
+		state.armEntityRuntime();
 		world.createLevels();
+		Failpoint.check("levels");
 		world.applyGameRules(restoredRules);
-		runtime.applyLevelRandom(this.server);
-		runtime.applyServerCounters(this.server);
-		runtime.applyTickRate(this.server);
-		players.attachAll(detached);
-		LOGGER.info("Restored savestate {} in {} ms", id, (System.nanoTime() - started) / 1_000_000L);
+		state.applyLevelRandom(this.server);
+		state.applyServerCounters(this.server);
+		state.applyTickRate(this.server);
+		players.attachAll(detached, state.playerRuntime(), preferLive);
+	}
+
+	private void rollBack(
+			String id,
+			Throwable failure,
+			RuntimeState live,
+			WorldRebuilder world,
+			PlayerRestorer players,
+			List<PlayerRestorer.Detached> detached,
+			Path backup,
+			boolean copyStarted
+	) throws SavestateException {
+		LOGGER.error("Restoring savestate {} failed, rolling the world back", id, failure);
+		try {
+			players.detachAll();
+			if (world.levelsOpen()) {
+				world.closeLevels();
+			}
+			if (Files.isDirectory(backup)) {
+				if (copyStarted) {
+					SnapshotFiles.clearTree(this.worldDir, SnapshotFiles.WORLD_EXCLUSIONS);
+				}
+				SnapshotFiles.moveTree(backup, this.worldDir, Set.of());
+				SnapshotFiles.deleteRecursively(backup);
+			}
+			this.rebuild(live, world, players, detached, true);
+		} catch (Throwable rollbackFailure) {
+			rollbackFailure.addSuppressed(failure);
+			LOGGER.error("Rolling back the failed restore of {} failed too; the pre-restore world is kept in {}", id, backup, rollbackFailure);
+			throw new SavestateException("Restore of " + id + " failed and could not be rolled back", rollbackFailure);
+		}
+		throw new SavestateException("Restore of " + id + " failed; the world was rolled back", failure);
+	}
+
+	private static void deleteInBackground(Path dir) {
+		Util.ioPool().execute(() -> {
+			try {
+				SnapshotFiles.deleteRecursively(dir);
+			} catch (IOException e) {
+				LOGGER.warn("Failed to delete restore backup {}", dir, e);
+			}
+		});
 	}
 
 	public boolean delete(String id) {

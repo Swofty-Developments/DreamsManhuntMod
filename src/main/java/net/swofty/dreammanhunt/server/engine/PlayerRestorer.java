@@ -1,6 +1,7 @@
 package net.swofty.dreammanhunt.server.engine;
 
 import com.mojang.logging.LogUtils;
+import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.protocol.game.ClientboundChangeDifficultyPacket;
@@ -39,6 +40,7 @@ import org.slf4j.Logger;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -50,7 +52,7 @@ final class PlayerRestorer {
 	private final PlayerList playerList;
 	private final PlayerListAccessor accessor;
 
-	record Detached(ServerPlayer player, ServerGamePacketListenerImpl connection, CompoundTag liveData) {
+	record Detached(ServerPlayer player, ServerGamePacketListenerImpl connection, CompoundTag liveData, CompoundTag liveRuntime, CompoundTag liveEntity) {
 	}
 
 	PlayerRestorer(MinecraftServer server) {
@@ -63,7 +65,9 @@ final class PlayerRestorer {
 		List<ServerPlayer> players = new ArrayList<>(this.playerList.getPlayers());
 		List<Detached> detached = new ArrayList<>(players.size());
 		for (ServerPlayer player : players) {
-			detached.add(new Detached(player, player.connection, this.serialize(player)));
+			detached.add(new Detached(player, player.connection, this.serialize(player), PlayerRuntime.capture(player), EntityRuntimeRestorer.capture(player)));
+			player.getStats().save();
+			player.getAdvancements().save();
 			player.closeContainer();
 			boolean alive = player.isAlive();
 			player.getChunkTrackingView().forEach(pos -> {
@@ -88,14 +92,17 @@ final class PlayerRestorer {
 		}
 	}
 
-	List<ServerPlayer> attachAll(List<Detached> detached) {
+	List<ServerPlayer> attachAll(List<Detached> detached, Map<UUID, CompoundTag> snapshotRuntime, boolean preferLive) {
 		List<ServerPlayer> attached = new ArrayList<>(detached.size());
+		List<ServerPlayer> previous = new ArrayList<>(detached.size());
 		for (Detached entry : detached) {
 			if (!entry.connection().isAcceptingMessages()) {
 				this.accessor.dreammanhunt$getPlayersByUuid().remove(entry.player().getUUID(), entry.player());
 				continue;
 			}
-			attached.add(this.attach(entry));
+			attached.add(this.attach(entry, snapshotRuntime, preferLive));
+			previous.add(entry.player());
+			Failpoint.check("players");
 		}
 		ClientboundPlayerInfoUpdatePacket info = new ClientboundPlayerInfoUpdatePacket(
 				EnumSet.of(
@@ -118,14 +125,18 @@ final class PlayerRestorer {
 			player.connection.send(new ClientboundGameEventPacket(ClientboundGameEventPacket.LIMITED_CRAFTING, rules.get(GameRules.LIMITED_CRAFTING) ? 1.0F : 0.0F));
 			player.getAdvancements().flushDirty(player, false);
 		}
+		for (int i = 0; i < attached.size(); i++) {
+			ServerPlayerEvents.AFTER_RESPAWN.invoker().afterRespawn(previous.get(i), attached.get(i), true);
+		}
 		return attached;
 	}
 
-	private ServerPlayer attach(Detached entry) {
+	private ServerPlayer attach(Detached entry, Map<UUID, CompoundTag> snapshotRuntime, boolean preferLive) {
 		ServerPlayer old = entry.player();
 		UUID uuid = old.getUUID();
-		Optional<CompoundTag> snapshotData = this.playerList.loadPlayerData(old.nameAndId());
-		if (snapshotData.isPresent()) {
+		Optional<CompoundTag> snapshotData = preferLive ? Optional.empty() : this.playerList.loadPlayerData(old.nameAndId());
+		CompoundTag runtime = snapshotData.isPresent() ? snapshotRuntime.get(uuid) : entry.liveRuntime();
+		if (snapshotData.isPresent() || preferLive) {
 			PlayerAdvancements advancements = this.accessor.dreammanhunt$getAdvancements().remove(uuid);
 			if (advancements != null) {
 				advancements.clearTriggers();
@@ -144,6 +155,9 @@ final class PlayerRestorer {
 
 			ServerPlayer player = new ServerPlayer(this.server, level, old.getGameProfile(), old.clientInformation());
 			player.load(input);
+			if (snapshotData.isEmpty()) {
+				EntityRuntimeRestorer.applyTag(player, entry.liveEntity());
+			}
 			player.snapTo(position, rotation.x, rotation.y);
 			ServerGamePacketListenerImpl connection = entry.connection();
 			player.connection = connection;
@@ -170,6 +184,10 @@ final class PlayerRestorer {
 			this.playerList.sendLevelInfo(player, level);
 			this.playerList.sendPlayerPermissionLevel(player);
 			player.getRecipeBook().sendInitialRecipeBook(player);
+			if (runtime != null) {
+				PlayerRuntime.applyCooldowns(player, runtime);
+				PlayerRuntime.applyMenu(player, runtime);
+			}
 
 			level.addRespawnedPlayer(player);
 			this.accessor.dreammanhunt$getPlayers().add(player);

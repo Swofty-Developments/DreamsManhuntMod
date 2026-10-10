@@ -10,6 +10,9 @@ public interface LevelAccessor {
 	@Accessor("random")
 	RandomSource dreammanhunt$getRandom();
 
+	@Accessor("soundSeedGenerator")
+	RandomSource dreammanhunt$getSoundSeedGenerator();
+
 	@Accessor("randValue")
 	int dreammanhunt$getRandValue();
 

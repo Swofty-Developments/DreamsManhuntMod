@@ -22,6 +22,7 @@ normal load path. This file covers the rest: state that vanilla keeps only in me
 | Tick rate manager | `ServerTickRateManager`: tick rate, frozen flag, frozen steps left, sprint ticks left, scheduled sprint ticks, previous frozen flag | Stored. Restored through accessors, then `updateStateToClients` and the per-player join sync send it to clients. |
 | Level RNG | `Level.random` (a `LegacyRandomSource`) | The raw 48-bit seed is stored per dimension and written back into the `AtomicLong`. This RNG drives random ticks, mob spawning, weather rolls, lightning and most block behaviour. |
 | Level LCG | `Level.randValue` | Stored per dimension. Picks the positions for random ticks and lightning. |
+| Sound seed RNG | `Level.soundSeedGenerator` (a `ThreadSafeLegacyRandomSource`) | Seed stored per dimension and written back. Picks the variant and pitch seed of every sound the server plays. |
 | Level empty timer | `ServerLevel.emptyTime` | Stored per dimension. Decides whether an empty level still ticks entities. |
 | Overworld custom spawner timers | `PhantomSpawner.nextTick`, `PatrolSpawner.nextTick`, `CatSpawner.nextTick` | Stored. The spawners are rebuilt with the level, so without this their timers would start from zero. |
 | Entity RNG | `Entity.random` for every loaded entity, players included | Seed stored per UUID. A mixin at the tail of `Entity.load` applies it when that entity is next loaded from the restored files. |
@@ -29,7 +30,12 @@ normal load path. This file covers the rest: state that vanilla keeps only in me
 | Hurt invulnerability | `Entity.invulnerableTime` | Stored per UUID and applied in the same hook. |
 | Attack cooldown | `LivingEntity.attackStrengthTicker` | Stored per UUID and applied in the same hook. Sets the damage of the next melee hit. |
 | Idle timer | `LivingEntity.noActionTime` | Stored per UUID and applied in the same hook. Drives mob despawning. |
+| Jump delay | `LivingEntity.noJumpDelay` | Stored per UUID and applied in the same hook. |
+| Ambient sound timer | `Mob.ambientSoundTime` | Stored per UUID and applied in the same hook. Decides when a mob next makes its idle sound. |
 | XP pickup delay | `Player.takeXpDelay` | Stored per UUID and applied in the same hook. |
+| Item cooldowns | `Player.cooldowns` (`ItemCooldowns`: per-group start and end tick plus its own `tickCount`) | Stored per player. On restore the exact start, end and `tickCount` are put back on the server, so the server-side fraction is the same as at save time. Clients get one vanilla `ClientboundCooldownPacket` per group with the remaining ticks, so the client cooldown ends on the same tick as the server's. Because that packet only carries a duration, the client overlay starts from a full bar. The exact client fraction is up to the client-state snapshot. |
+| Carried item and 2x2 crafting grid | `containerMenu.getCarried()`, `inventoryMenu` crafting slots | Stored per player. If the player's own inventory menu was the open menu at save time, the grid and the carried item are put back exactly and synced to the client with the inventory menu's full sync. The inventory screen itself is not reopened. |
+| Crafting table grid and carried item of another open menu | `AbstractCraftingMenu.getInputGridSlots()`, `getCarried()` | Stored per player. The restored player starts with no container open, so these items go back into the inventory the way vanilla's close does (`placeItemBackInInventory`, dropped if the inventory is full). |
 | Level data held in memory | `PrimaryLevelData`: game time, spawn point, default game type, difficulty, difficulty lock, allow commands | Stored. The live `WorldData` is updated in place, because it is a `final` field on the server and is never reloaded from `level.dat`. Game time also sets the deadlines of scheduled block and fluid ticks, which chunks store relative to it. |
 
 ## Persisted state that needs special handling on restore
@@ -44,13 +50,18 @@ Vanilla never reloads these from disk while the server is running, so the engine
 | Scoreboard | Objectives and teams are removed while players are still listed, so clients get the remove packets. The snapshot's `ScoreboardSaveData` is then loaded and each player gets the full scoreboard sync. |
 | Boss bars | Every `ServerBossEvent` is tracked in a weak registry and detached from all players before teardown. Custom boss bars are re-added through `onPlayerConnect`. Raid, dragon and mob bars come back through their own tick and tracking logic. |
 | Chunk tickets | `TicketStorage` comes back with the level data. `activateAllDeactivatedTickets` runs for each new level, as in `prepareLevels`, which restores forced chunk and portal tickets. Ender pearl tickets are not persisted. They are placed again when a player's pearls respawn from player data. |
-| Players | Each online player gets a fresh `ServerPlayer` built through the login and respawn path. The player list, the connection's `player` field, advancements and stats are swapped to the new object. The entity id is kept, and ender pearls and vehicles are respawned from player data. |
+| Players | Each online player gets a fresh `ServerPlayer` built through the login and respawn path. The player list, the connection's `player` field, advancements and stats are swapped to the new object. The entity id is kept, and ender pearls and vehicles are respawned from player data. Fabric's `ServerPlayerEvents.AFTER_RESPAWN` fires with `alive = true` for each player. `COPY_FROM` is not fired: Fabric's attachment API listens to it and copies every attachment from the old player, which would overwrite the attachments loaded from the snapshot. |
+
+## Failed restores
+
+A restore first flushes the live game (global saved data, `level.dat`, player stats and advancements, and every level's dirty chunks while it closes) and keeps the live runtime state and each player's live data in memory. It then moves the live world folder aside to `<world>/dreammanhunt/restore-backup-<id>-<time>/` with a rename on the same filesystem, and copies the snapshot in. If any later step throws, the engine detaches whatever players were already attached, closes any half-built levels, moves the backup back, and rebuilds the levels and players from the live state, so the world ends up as it was just before the restore. `restore` then throws a `SavestateException` ending in "the world was rolled back". If the rollback fails too, the backup folder is left in place for manual recovery. After a successful restore the backup is deleted on the IO pool.
+
+Saving the dirty chunks of the old levels is what makes the rollback lossless. At manhunt scale it is the largest part of a restore (about 0.7 s of 0.9 s with 2048 forced chunks across the overworld and nether all dirty), which is still well under the 5 s budget, so it is kept.
 
 ## In-memory state that is not captured
 
 | State | Why it is left out |
 |---|---|
-| `Level.threadSafeRandom`, `Level.soundSeedGenerator` | Only pick sound variants for clients and seeds for some off-thread work. Nothing on the server depends on them afterwards. |
 | Pending block events (`ServerLevel.blockEvents`) | Filled and drained within a single tick, so the queue is empty between ticks, when `save` runs. |
 | Navigation and pathfinding (`Mob.navigation` paths, `navigatingMobs`, `PathTypeCache`) | Rebuilt by the AI on the next tick. A mob may pick a slightly different path than it would have without the restore. |
 | Goal selector state and Brain memories without a codec (for example `NEAREST_VISIBLE_PLAYER`, `LOOK_TARGET`, `PATH`) | Recomputed by sensors and goals within a few ticks. Memories with a codec are saved with the entity. |
@@ -58,9 +69,10 @@ Vanilla never reloads these from disk while the server is running, so the engine
 | Sleeping status (`SleepStatus`) | Recomputed from the players every tick. |
 | Natural spawner state (`lastSpawnState`, mob caps) | Recomputed every tick. |
 | `VillageSiege` progress | Only matters during the midnight siege window. It restarts from idle. |
+| `LivingEntity.lastHurtByMob` and its timestamp, `lastHurtByPlayer` | The attacker reference is not saved by vanilla, so the timestamps alone would point at nothing. Revenge targeting and player-kill XP credit start from scratch. |
 | Light engine queues, chunk generation and IO futures | Transient work. Lit and generated chunks are already saved. |
 | `MinecraftServer.ticksUntilAutosave`, status ping sampling RNG, metrics | Do not affect gameplay. |
 | Network ids of non-player entities | Reassigned on load. Clients are sent remove packets for the old ids and add packets for the new ones. Player ids are kept. |
-| Open container menus and the cursor item | Every open menu is closed on restore. Items in the 2x2 crafting grid and on the cursor at save time are not in player data, so they are lost. |
+| Transient input slots of other menus (anvil, grindstone, stonecutter, loom, smithing table, enchanting table, cartography table, villager trading, beacon payment) | Not captured. Items sitting in those slots at save time are lost on restore. Every open menu is closed on restore, and screens are not reopened. |
 | `ServerGamePacketListenerImpl` state (keep-alive, chat chain, teleport ids, chunk batch counters) | Tied to the live connection, which is kept. The usual respawn teleport handshake re-syncs the position. |
 | Mod-specific in-memory state of other mods | Not known to the engine. Mods can listen to `ServerLevelEvents.UNLOAD` and `LOAD`, which fire for every level during a restore. |

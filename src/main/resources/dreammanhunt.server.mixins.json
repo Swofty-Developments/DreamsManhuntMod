@@ -4,9 +4,11 @@
 	"compatibilityLevel": "JAVA_25",
 	"mixins": [
 		"CatSpawnerAccessor",
+		"CooldownInstanceAccessor",
 		"EntityAccessor",
 		"EntityRuntimeMixin",
 		"GameRulesAccessor",
+		"ItemCooldownsAccessor",
 		"LegacyRandomSourceAccessor",
 		"LevelAccessor",
 		"LivingEntityAccessor",
@@ -19,6 +21,7 @@
 		"ServerGamePacketListenerImplInvoker",
 		"ServerLevelAccessor",
 		"ServerTickRateManagerAccessor",
+		"ThreadSafeLegacyRandomSourceAccessor",
 		"TickRateManagerAccessor"
 	],
 	"injectors": {
