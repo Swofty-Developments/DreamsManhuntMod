@@ -158,7 +158,7 @@ public final class SavestateEngine {
 
 		runtime.applyLevelData(this.server);
 		GameRuleMap restoredRules = world.reloadGlobalData();
-		runtime.armEntityRandom();
+		runtime.armEntityRuntime();
 		world.createLevels();
 		world.applyGameRules(restoredRules);
 		runtime.applyLevelRandom(this.server);

@@ -12,13 +12,21 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.Difficulty;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.GameType;
+import net.minecraft.world.entity.npc.CatSpawner;
+import net.minecraft.world.level.CustomSpawner;
 import net.minecraft.world.level.levelgen.LegacyRandomSource;
+import net.minecraft.world.level.levelgen.PatrolSpawner;
+import net.minecraft.world.level.levelgen.PhantomSpawner;
 import net.minecraft.world.level.storage.LevelData;
 import net.minecraft.world.level.storage.ServerLevelData;
 import net.minecraft.world.level.storage.WorldData;
+import net.swofty.dreammanhunt.mixin.server.CatSpawnerAccessor;
 import net.swofty.dreammanhunt.mixin.server.LegacyRandomSourceAccessor;
 import net.swofty.dreammanhunt.mixin.server.LevelAccessor;
 import net.swofty.dreammanhunt.mixin.server.MinecraftServerAccessor;
+import net.swofty.dreammanhunt.mixin.server.PatrolSpawnerAccessor;
+import net.swofty.dreammanhunt.mixin.server.PhantomSpawnerAccessor;
+import net.swofty.dreammanhunt.mixin.server.ServerLevelAccessor;
 import net.swofty.dreammanhunt.mixin.server.ServerTickRateManagerAccessor;
 import net.swofty.dreammanhunt.mixin.server.TickRateManagerAccessor;
 
@@ -71,19 +79,25 @@ final class RuntimeState {
 				levelTag.putLong("random", ((LegacyRandomSourceAccessor) random).dreammanhunt$getSeed().get());
 			}
 			levelTag.putInt("rand_value", accessor.dreammanhunt$getRandValue());
+			levelTag.putInt("empty_time", ((ServerLevelAccessor) level).dreammanhunt$getEmptyTime());
+			CompoundTag spawners = new CompoundTag();
+			for (CustomSpawner spawner : ((ServerLevelAccessor) level).dreammanhunt$getCustomSpawners()) {
+				switch (spawner) {
+					case PhantomSpawner phantom -> spawners.putInt("phantom", ((PhantomSpawnerAccessor) phantom).dreammanhunt$getNextTick());
+					case PatrolSpawner patrol -> spawners.putInt("patrol", ((PatrolSpawnerAccessor) patrol).dreammanhunt$getNextTick());
+					case CatSpawner cat -> spawners.putInt("cat", ((CatSpawnerAccessor) cat).dreammanhunt$getNextTick());
+					default -> {
+					}
+				}
+			}
+			levelTag.put("spawners", spawners);
 			levels.add(levelTag);
 			for (Entity entity : level.getAllEntities()) {
-				Long seed = EntityRngRestorer.seedOf(entity);
-				if (seed != null) {
-					CompoundTag entityTag = new CompoundTag();
-					entityTag.store("uuid", UUIDUtil.CODEC, entity.getUUID());
-					entityTag.putLong("seed", seed);
-					entities.add(entityTag);
-				}
+				entities.add(EntityRuntimeRestorer.capture(entity));
 			}
 		}
 		tag.put("levels", levels);
-		tag.put("entity_random", entities);
+		tag.put("entities", entities);
 		return new RuntimeState(tag);
 	}
 
@@ -131,17 +145,28 @@ final class RuntimeState {
 				levelTag.getLong("random").ifPresent(seed -> ((LegacyRandomSourceAccessor) random).dreammanhunt$getSeed().set(seed));
 			}
 			levelTag.getInt("rand_value").ifPresent(accessor::dreammanhunt$setRandValue);
+			levelTag.getInt("empty_time").ifPresent(((ServerLevelAccessor) level)::dreammanhunt$setEmptyTime);
+			CompoundTag spawners = levelTag.getCompoundOrEmpty("spawners");
+			for (CustomSpawner spawner : ((ServerLevelAccessor) level).dreammanhunt$getCustomSpawners()) {
+				switch (spawner) {
+					case PhantomSpawner phantom -> spawners.getInt("phantom").ifPresent(((PhantomSpawnerAccessor) phantom)::dreammanhunt$setNextTick);
+					case PatrolSpawner patrol -> spawners.getInt("patrol").ifPresent(((PatrolSpawnerAccessor) patrol)::dreammanhunt$setNextTick);
+					case CatSpawner cat -> spawners.getInt("cat").ifPresent(((CatSpawnerAccessor) cat)::dreammanhunt$setNextTick);
+					default -> {
+					}
+				}
+			}
 		}
 	}
 
-	void armEntityRandom() {
-		Map<UUID, Long> seeds = new HashMap<>();
-		for (Tag element : this.tag.getListOrEmpty("entity_random")) {
+	void armEntityRuntime() {
+		Map<UUID, CompoundTag> runtime = new HashMap<>();
+		for (Tag element : this.tag.getListOrEmpty("entities")) {
 			if (element instanceof CompoundTag entityTag) {
-				entityTag.read("uuid", UUIDUtil.CODEC).ifPresent(uuid -> entityTag.getLong("seed").ifPresent(seed -> seeds.put(uuid, seed)));
+				entityTag.read("uuid", UUIDUtil.CODEC).ifPresent(uuid -> runtime.put(uuid, entityTag));
 			}
 		}
-		EntityRngRestorer.arm(seeds);
+		EntityRuntimeRestorer.arm(runtime);
 	}
 
 	void applyTickRate(MinecraftServer server) {

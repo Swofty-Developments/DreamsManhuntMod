@@ -9,4 +9,10 @@ import org.spongepowered.asm.mixin.gen.Accessor;
 public interface EntityAccessor {
 	@Accessor("random")
 	RandomSource dreammanhunt$getRandom();
+
+	@Accessor("invulnerableTime")
+	int dreammanhunt$getInvulnerableTime();
+
+	@Accessor("invulnerableTime")
+	void dreammanhunt$setInvulnerableTime(int ticks);
 }
