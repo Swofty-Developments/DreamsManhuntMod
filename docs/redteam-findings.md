@@ -102,7 +102,7 @@ None of this can be recovered from footage, but it made every scene with particl
 
 Evidence: `nether_portal` 0.9%, `end_portal_gateway` 0.5%, `campfire_fire` 11% (smoke), squid tentacles in `mobs_air_water`.
 
-Fix: `ClientLevelAnimateMixin` and `ParticleRandomMixin` draw seeds from two mod-owned RNGs, and `RandomStates` captures and restores those, the level, particle engine and spell RNGs, and every entity RNG by UUID.
+Fix: closed at the root, see "Randomness at the root". `ClientLevelAnimateMixin` routes `animateTick` through the client seed stream, particle RNGs come from that stream, and `RandomStates` also restores the level, particle engine, spell particle and per-entity RNG states by UUID.
 
 ### 8. The local player is not put back exactly when moving at the save (b) — handed off to client-state
 
@@ -165,7 +165,8 @@ The logic lives in `net.swofty.dreammanhunt.randomroot.SeedStreams`. Its mixins 
 - **Client entities built from add-entity packets** (`AddEntitySeedMixin`) take their constructor seeds from `hash(uuid) ^ session salt` instead of the stream. Their randomness (lightning bolt shape, squid tentacles, …) then does not depend on when the packet happens to arrive. The salt is captured and restored with the stream.
 - **Entities loaded from disk or a snapshot** (`EntityType.create` with `EntitySpawnReason.LOAD`, `EntityTypeMixin`) do not draw from the server stream. Chunk loading after a restore therefore cannot shift the stream.
 - **Server hooks.** The stream is captured in `RuntimeState.capture` and re-applied after the restore's level rebuild, through one line each in the engine. It is applied once more at the start of the first unfrozen server tick (`MinecraftServerMixin`), which discards whatever the rebuild, player re-attachment and the barrier consumed.
-- **Client hooks.** The stream is captured and applied through `RandomStates`, which is part of `ExtraState`, so it is restored again at Resume.
+- **Client hooks.** The stream is captured last in `RandomStates` (part of `ExtraState`), so nothing the capture itself touches can draw from it afterwards. At Apply and Resume it is scheduled, then applied at the start of the first client tick after Resume (`MinecraftThreadMixin`). Anything the restore path consumes (audio replay, particle copies, re-created entities) is discarded. A reflective read once forced `SpellParticle.<clinit>` during the capture and shifted every later particle by one draw. The draw trace (`REDTEAM_SEEDDEBUG=1`, which lists the call site of every stream draw between the save/resume and +6 ticks) found it.
+- **§k glyphs.** `Font.random` is consumed once per obfuscated glyph per rendered *frame*, so its state depends on how many frames the game rendered. That count varies with frame pacing, even in vanilla. The mod reseeds it at the start of every frame from a per-tick seed drawn from the client stream, mixed with the frame's partial tick. Obfuscated glyphs still change every frame as in vanilla, but they are now a pure function of (tick, partial tick), like everything else on screen.
 
 This closes finding 11 at the root: the bolt shape comes from the UUID that the restored server stream reproduces, and the §k glyph RNG is restored. Scene `lightning_obfuscated` is the proof: two bolts are summoned 1 tick after the save in both timelines, with an obfuscated title and subtitle on screen.
 

@@ -19,6 +19,7 @@ import net.minecraft.world.level.levelgen.LegacyRandomSource;
 import org.jspecify.annotations.Nullable;
 
 public final class SeedStreams {
+	public static final boolean DEBUG = Boolean.getBoolean("dreammanhunt.seeddebug") || System.getenv("REDTEAM_SEEDDEBUG") != null;
 	public static final Stream CLIENT = new Stream();
 	public static final Stream SERVER = new Stream();
 	private static final Map<Class<?>, List<Field>> FIELDS = new ConcurrentHashMap<>();
@@ -123,6 +124,7 @@ public final class SeedStreams {
 		private @Nullable UUID pendingUuid;
 		private int pendingCount;
 		private @Nullable CompoundTag scheduled;
+		public final List<String> debug = Collections.synchronizedList(new ArrayList<>());
 
 		private Stream() {
 		}
@@ -136,6 +138,9 @@ public final class SeedStreams {
 			if (this.loading > 0) {
 				return null;
 			}
+			if (DEBUG) {
+				this.debug.add(StackWalker.getInstance().walk(frames -> frames.skip(3).limit(6).map(f -> f.getClassName().replaceAll(".*\\.", "") + "." + f.getMethodName()).toList()).toString());
+			}
 			return this.source.nextLong();
 		}
 
@@ -147,6 +152,7 @@ public final class SeedStreams {
 
 		public CompoundTag capture() {
 			CompoundTag tag = new CompoundTag();
+			this.debug.clear();
 			tag.putLong("seed", this.sourceSeed.get());
 			tag.putLong("salt", this.salt);
 			long token = new SecureRandom().nextLong();
@@ -177,16 +183,17 @@ public final class SeedStreams {
 			}
 		}
 
-		void schedule(CompoundTag tag) {
+		public void schedule(CompoundTag tag) {
 			this.scheduled = tag;
 			this.apply(tag);
 		}
 
-		void applyScheduled() {
+		public void applyScheduled() {
 			CompoundTag tag = this.scheduled;
 			if (tag != null) {
 				this.scheduled = null;
 				this.apply(tag);
+				this.debug.clear();
 			}
 		}
 

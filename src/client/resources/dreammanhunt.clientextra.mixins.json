@@ -5,6 +5,7 @@
 	"client": [
 		"AddEntitySeedMixin",
 		"ClientLevelAnimateMixin",
+		"FontAccessor",
 		"ItemEntityAccessor",
 		"MinecraftThreadMixin",
 		"NeedleDirectionHelperMixin",

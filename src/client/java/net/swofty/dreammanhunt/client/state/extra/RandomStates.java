@@ -18,9 +18,7 @@ public final class RandomStates {
 
 	static CompoundTag capture(Minecraft minecraft) {
 		CompoundTag tag = new CompoundTag();
-		tag.put("stream", SeedStreams.CLIENT.capture());
 		tag.put("font", state(read(Font.class, "random", minecraft.font)));
-		tag.put("spell", state(read(net.minecraft.client.particle.SpellParticle.class, "RANDOM", null)));
 		tag.put("level", state(read(Level.class, "random", minecraft.level)));
 		tag.put("particles", state(read(minecraft.particleEngine.getClass(), "random", minecraft.particleEngine)));
 		CompoundTag entities = new CompoundTag();
@@ -28,6 +26,7 @@ public final class RandomStates {
 			entities.put(entity.getUUID().toString(), state(read(Entity.class, "random", entity)));
 		}
 		tag.put("entities", entities);
+		tag.put("stream", SeedStreams.CLIENT.capture());
 		return tag;
 	}
 
@@ -35,9 +34,8 @@ public final class RandomStates {
 		if (tag.isEmpty()) {
 			return;
 		}
-		SeedStreams.CLIENT.apply(tag.getCompoundOrEmpty("stream"));
+		SeedStreams.CLIENT.schedule(tag.getCompoundOrEmpty("stream"));
 		restore(read(Font.class, "random", minecraft.font), tag.getCompoundOrEmpty("font"));
-		restore(read(net.minecraft.client.particle.SpellParticle.class, "RANDOM", null), tag.getCompoundOrEmpty("spell"));
 		restore(read(Level.class, "random", minecraft.level), tag.getCompoundOrEmpty("level"));
 		restore(read(minecraft.particleEngine.getClass(), "random", minecraft.particleEngine), tag.getCompoundOrEmpty("particles"));
 		CompoundTag entities = tag.getCompoundOrEmpty("entities");

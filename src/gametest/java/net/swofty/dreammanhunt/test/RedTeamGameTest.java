@@ -588,7 +588,30 @@ public final class RedTeamGameTest implements FabricClientGameTest {
 			if (hud != target) {
 				throw new AssertionError(prefix + ": ran past hud tick " + target + " (at " + hud + ")");
 			}
+			long fontSeed = context.computeOnClient(RedTeamGameTest::fontSeed);
+			if (offset == 0 && net.swofty.dreammanhunt.randomroot.SeedStreams.DEBUG) {
+				List<String> used = context.computeOnClient(mc -> new ArrayList<>(net.swofty.dreammanhunt.randomroot.SeedStreams.CLIENT.debug));
+				System.out.printf("[redteam-debug] %s stream draws before t0: %d%n", prefix, used.size());
+				for (int i = 0; i < used.size(); i++) {
+					System.out.printf("[redteam-debug] %s draw %d %s%n", prefix, i, used.get(i));
+				}
+			}
 			shots.add(context.takeScreenshot(prefix + "-t" + offset));
+			System.out.printf("[redteam-debug] %s t%d font seed %d -> %d, partial tick %.4f%n", prefix, offset, fontSeed, context.computeOnClient(RedTeamGameTest::fontSeed),
+				context.computeOnClient(mc -> mc.getDeltaTracker().getGameTimeDeltaPartialTick(true)));
+		}
+	}
+
+	private static long fontSeed(Minecraft mc) {
+		try {
+			java.lang.reflect.Field field = net.minecraft.client.gui.Font.class.getDeclaredField("random");
+			field.setAccessible(true);
+			Object random = field.get(mc.font);
+			java.lang.reflect.Field seed = net.minecraft.world.level.levelgen.LegacyRandomSource.class.getDeclaredField("seed");
+			seed.setAccessible(true);
+			return ((java.util.concurrent.atomic.AtomicLong) seed.get(random)).get();
+		} catch (ReflectiveOperationException | ClassCastException e) {
+			return -1;
 		}
 	}
 
