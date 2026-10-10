@@ -75,6 +75,7 @@ public final class Probes {
 			out.put(key, "gameTime", level.getGameTime());
 			out.put(key, "random", Reflect.describe(level.getRandom(), 0));
 			out.put(key, "rain", level.getRainLevel(1.0F) + "/" + level.getThunderLevel(1.0F));
+			out.put("chunks:" + level.dimension().identifier().getPath(), "loaded", level.getChunkSource().getLoadedChunksCount());
 			out.put(key, "blockTicks", level.getBlockTicks().count());
 			out.put(key, "fluidTicks", level.getFluidTicks().count());
 			Object blockEvents = Reflect.get(level, "blockEvents");

@@ -120,7 +120,7 @@ public final class Reflect {
 			case float[] array -> java.util.Arrays.toString(array);
 			case double[] array -> java.util.Arrays.toString(array);
 			case boolean[] array -> java.util.Arrays.toString(array);
-			default -> depth > 0 && !(value instanceof Level) ? nested(value, depth - 1) : value.getClass().getSimpleName();
+			default -> value.getClass().isRecord() ? value.toString() : depth > 0 && !(value instanceof Level) ? nested(value, depth - 1) : value.getClass().getSimpleName();
 		};
 	}
 

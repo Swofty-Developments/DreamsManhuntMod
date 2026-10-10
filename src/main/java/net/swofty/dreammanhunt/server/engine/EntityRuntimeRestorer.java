@@ -43,9 +43,15 @@ public final class EntityRuntimeRestorer {
 			int saved = tag == null ? 0 : tag.getIntOr("id", 0);
 			entity.setId(saved > 0 && !EntityIds.isLive(level.getServer(), saved) ? saved : EntityIds.allocate(level.getServer()));
 		}
+		if (tag != null) {
+			AiState.resolveReferences();
+		}
 	}
 
 	static void applyTag(Entity entity, CompoundTag tag) {
+		if (entity.level() instanceof ServerLevel level) {
+			tag.getCompound("ai").ifPresent(ai -> AiState.apply(entity, ai, level));
+		}
 		EntityAccessor accessor = (EntityAccessor) entity;
 		if (accessor.dreammanhunt$getRandom() instanceof LegacyRandomSource random) {
 			tag.getLong("seed").ifPresent(seed -> ((LegacyRandomSourceAccessor) random).dreammanhunt$getSeed().set(seed));
@@ -116,6 +122,8 @@ public final class EntityRuntimeRestorer {
 		}
 		if (entity instanceof Player player) {
 			tag.putInt("take_xp_delay", player.takeXpDelay);
+		} else {
+			tag.put("ai", AiState.capture(entity));
 		}
 		return tag;
 	}

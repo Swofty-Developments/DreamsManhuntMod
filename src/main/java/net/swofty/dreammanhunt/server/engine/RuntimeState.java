@@ -109,6 +109,7 @@ final class RuntimeState {
 		}
 		tag.put("levels", levels);
 		tag.put("block_entities", BlockEntityRuntime.capture(server));
+		tag.put("entity_tick_order", EntityTickOrder.capture(server));
 		ListTag players = new ListTag();
 		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
 			players.add(PlayerRuntime.capture(player));
@@ -145,6 +146,11 @@ final class RuntimeState {
 	void applyServerCounters(MinecraftServer server) {
 		net.swofty.dreammanhunt.randomroot.SeedStreams.applyServer(this.tag);
 		((MinecraftServerAccessor) server).dreammanhunt$setTickCount(this.tag.getIntOr("server_tick_count", server.getTickCount()));
+	}
+
+	void applyEntityTickOrder(MinecraftServer server) {
+		EntityTickOrder.apply(server, this.tag.getListOrEmpty("entity_tick_order"));
+		AiState.resolveReferences();
 	}
 
 	void applyEntityCounter() {
@@ -190,6 +196,7 @@ final class RuntimeState {
 	}
 
 	void armEntityRuntime() {
+		AiState.clearReferences();
 		Map<UUID, CompoundTag> runtime = new HashMap<>();
 		for (Tag element : this.tag.getListOrEmpty("entities")) {
 			if (element instanceof CompoundTag entityTag) {

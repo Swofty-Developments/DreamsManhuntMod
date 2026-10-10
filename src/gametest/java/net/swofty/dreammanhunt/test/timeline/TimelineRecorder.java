@@ -32,7 +32,7 @@ public final class TimelineRecorder {
 		}
 
 		boolean serverDone() {
-			return this.server.size() >= this.scenario.ticks();
+			return this.server.size() >= this.scenario.ticks() + 1;
 		}
 
 		boolean clientDone() {
