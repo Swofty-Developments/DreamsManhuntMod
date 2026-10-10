@@ -232,6 +232,13 @@ public final class WorldSyncGameTest implements FabricClientGameTest {
 		}
 		entities.forEach((uuid, value) -> out.add("N " + uuid + " " + value));
 		long now = level.getGameTime();
+		int[] ticking = new int[1];
+		level.getChunkSource().chunkMap.forEachBlockTickingChunk(chunk -> ticking[0]++);
+		List<Long> tickingKeys = new ArrayList<>();
+		level.getChunkSource().chunkMap.forEachBlockTickingChunk(chunk -> tickingKeys.add(chunk.getPos().pack()));
+		tickingKeys.sort(null);
+		out.add("G loaded=" + level.getChunkSource().getLoadedChunksCount() + " ticking=" + ticking[0] + " tickingHash=" + tickingKeys.hashCode()
+			+ " entities=" + level.getAllEntities().spliterator().getExactSizeIfKnown() + " rng=" + rngSeed(level));
 		for (int cx = (o.getX() - r) >> 4; cx <= (o.getX() + r) >> 4; cx++) {
 			for (int cz = (o.getZ() - r) >> 4; cz <= (o.getZ() + r) >> 4; cz++) {
 				net.minecraft.world.level.chunk.LevelChunk chunk = level.getChunkSource().getChunkNow(cx, cz);
@@ -251,6 +258,19 @@ public final class WorldSyncGameTest implements FabricClientGameTest {
 			}
 		}
 		return out;
+	}
+
+	private static String rngSeed(ServerLevel level) {
+		try {
+			java.lang.reflect.Field field = net.minecraft.world.level.Level.class.getDeclaredField("random");
+			field.setAccessible(true);
+			Object random = field.get(level);
+			java.lang.reflect.Field seed = net.minecraft.world.level.levelgen.LegacyRandomSource.class.getDeclaredField("seed");
+			seed.setAccessible(true);
+			return String.valueOf(((java.util.concurrent.atomic.AtomicLong) seed.get(random)).get());
+		} catch (ReflectiveOperationException | ClassCastException e) {
+			return "?";
+		}
 	}
 
 	private String runScene(ClientGameTestContext context, TestServerContext server, Scene scene, BlockPos origin) {
