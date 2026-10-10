@@ -19,6 +19,8 @@ This is every piece of client-side state that affects what is on screen or what 
 - Hunger and heart shake is seeded with `tickCount * 312871` every frame (`client/gui/Hud.java:785`). Restoring `Hud.tickCount` therefore makes the shake pattern exact, with no RNG state to save.
 - 26.3 has no `LevelRenderer` tick counter. Clouds and weather columns derive from `gameTime`, which the server restores.
 
+In-memory parts (particles, toasts, subtitles, the live chat message objects) survive only within one game session; after a restart the chat falls back to the serialised copy and the others are cleared.
+
 ## Mechanism summary
 
 - **VisualClock** (`VisualClock`): a mod-owned wall clock, `Util.getNanos() + offset`.
@@ -76,10 +78,10 @@ This is every piece of client-side state that affects what is on screen or what 
 | `LerpingBossEvent.setTime` :14, :29/:38/:42 | boss bar progress lerp (100 ms) | partly (bars re-sent) | VisualClock `@WrapOperation` | LOW |
 | `SectionRenderDispatcher.RenderSection.uploadedTime` :210, `getVisibility` :217 | chunk section fade-in (`chunkSectionFadeInTime`); block entities hidden below 0.3 visibility (`LevelExtractor:288`) | no; re-meshed sections fade in | readiness waits until every visible section has visibility 1.0 before Apply | HIGH |
 | Transient blocks (`ClientPacketListener:1156`, `LevelExtractor:235-247`, `LevelRenderer:1029`) | client-predicted block overlays | no | short-lived; expire on their own (gap: not explicitly cleared) | LOW |
-| `ToastManager.ToastInstance.animationStartTime`/`becameFullyVisibleAt` (`client/gui/components/toasts/ToastManager.java:195-196,237`) | toast slide and display time | no | gap: not restored (toast objects can't be serialised) | LOW |
+| `ToastManager.ToastInstance.animationStartTime`/`becameFullyVisibleAt` (`client/gui/components/toasts/ToastManager.java:195-196,237`) | toast slide and display time | no | restored: `Util.getMillis()` in `ToastInstance.update` routed through the visual clock; instances deep-copied (in memory) | MEDIUM |
 | `NowPlayingToast` static `musicNoteColorTick` :52 (`System.currentTimeMillis`) | music note colour cycle | no | gap | LOW |
-| `SubtitleOverlay` subtitles :25/:27, times :138/:145 | subtitle fade | no | gap: left to expire | LOW |
-| `SpectatorGui.lastSelectionTime` :23 | spectator hotbar fade | no | gap | LOW |
+| `SubtitleOverlay` subtitles :25/:27, times :138/:145 | subtitle fade | no | restored: `Subtitle` time calls routed through the visual clock; list deep-copied (in memory) | LOW |
+| `SpectatorGui.lastSelectionTime` :23 | spectator hotbar fade | no | restored: visual clock plus saved value | LOW |
 | `ActiveTextCollector` :77 | scrolling long labels (screens only) | no | not needed in-world | LOW |
 | `EditBox.focusedTime`, `MultiLineEditBox`, `AbstractSignEditScreen`, `IMEPreeditOverlay` | text cursor blink | no | screens only; gap | LOW |
 | `ChatListener.previousMessageTime` :47 | chat delay queue | no | gap | LOW |
@@ -118,7 +120,7 @@ This is every piece of client-side state that affects what is on screen or what 
 | `rainLevel`/`oRainLevel`/`thunderLevel`/`oThunderLevel` (Level :119-122) | rain, thunder, sky darkening, rain fog | only if the restored world is raining | Apply sets all four | HIGH |
 | `skyFlashTime` :169 | lightning sky flash | no (level reused) | Apply via `setSkyFlashTime` | MEDIUM |
 | `rainSoundTime` :170 | rain sound cadence | no | gap | LOW |
-| `destroyingBlocks`/`destructionProgress` :187-188 | block crack overlays | no in the same dimension | cleared at Apply (gap: saved cracks not re-added) | MEDIUM |
+| `destroyingBlocks`/`destructionProgress` :187-188 | block crack overlays | no in the same dimension | restored: saved entries (id, pos, progress, tick) re-inserted into both maps | MEDIUM |
 | `endFlashState` :164 (`client/renderer/EndFlashState.java`) | End sky flash | derived from clock time | server via clock | LOW |
 | `explosionTracker` :184, `lightUpdateQueue` | transient | n/a | none | LOW |
 | `blockStatePredictionHandler` :182 | pending block predictions | overwritten by chunks | none | LOW |
@@ -167,8 +169,8 @@ This is every piece of client-side state that affects what is on screen or what 
 |---|---|---|---|---|
 | `walkDist`/`walkDistO` :8-9 | view-bob phase (`Camera:156`), third-person walk | no | Apply | HIGH |
 | `bob`/`bobO` :16-17 | view-bob amplitude | no | Apply | HIGH |
-| `deltaMovementOnPreviousTick` :7 | model lean | no | gap | LOW |
-| `xCloak`/`yCloak`/`zCloak` and their O values :10-15 | cape physics | no; snaps when more than 10 blocks off | gap | LOW |
+| `deltaMovementOnPreviousTick` :7 | model lean | no | restored (local player; remote players via the generic entity copy) | LOW |
+| `xCloak`/`yCloak`/`zCloak` and their O values :10-15 | cape physics | no; snaps when more than 10 blocks off | restored when the player is back at the saved position | LOW |
 
 ## Player (`world/entity/player/Player.java`) and LivingEntity (`world/entity/LivingEntity.java`)
 
@@ -176,7 +178,7 @@ This is every piece of client-side state that affects what is on screen or what 
 |---|---|---|---|---|
 | `attackStrengthTicker`/`itemSwapTicker` (LE :240-241) | attack indicator, hand height target | no; also reset when `lastItemInMainHand` differs | Apply both and set `lastItemInMainHand` to the current main hand | HIGH |
 | `lastItemInMainHand` (Player :169) | attack-strength reset trigger | no | Apply | HIGH |
-| `cooldowns` (Player :170, `ItemCooldowns` map plus `tickCount`) | hotbar cooldown overlay, use prediction | no; new instance, never re-sent | gap (server could re-send `ClientboundCooldownPacket`) | HIGH |
+| `cooldowns` (Player :170, `ItemCooldowns` map plus `tickCount`) | hotbar cooldown overlay, use prediction | no; new instance, never re-sent | restored: map entries (start, end) and `tickCount`; `ClientboundCooldownPacket` ignored between Begin and Resume and the values re-applied at Resume | HIGH |
 | `hurtDir` (Player :174), `hurtTime`/`hurtDuration` (LE :236-237) | hurt camera tilt (`GameRenderer.bobHurt`), red tint | no | Apply | HIGH |
 | `swingState` (LE :232; `currentSwing`, `ticks`, `oldAnimation`, `animation`) | hand swing in first and third person | no | Apply (SwingAnimation codec) | HIGH |
 | `useItem`/`useItemRemaining` (LE :267-268) | draw, eat and spyglass progress | partly (restarts full) | Apply | HIGH |
@@ -184,9 +186,9 @@ This is every piece of client-side state that affects what is on screen or what 
 | `yBodyRot`/`yBodyRotO`/`yHeadRot`/`yHeadRotO` (LE :243-246) | body and head yaw | yes for re-added entities, no for the new LocalPlayer | Apply | MEDIUM |
 | `fallFlyTicks` (LE :269) | elytra pitch ramp | no | Apply | MEDIUM |
 | `swimAmount`/`swimAmountO` (LE :279-280) | swim and crawl pose blend | no | Apply | MEDIUM |
-| `elytraAnimationState` (LE :247) | wing spread | no | gap | LOW |
-| `deathTime` (LE :238), `damageCooldownTime` (LE :239) | death roll, Hud heart blink trigger | no | gap | LOW |
-| `activeEffects` blend (`MobEffectInstance.BlendState` :368-405) | darkness and blindness fog fade | yes, but snaps (blend=false) | gap for mid-fade saves | LOW |
+| `elytraAnimationState` (LE :247) | wing spread | no | restored (local player and every other living entity) | LOW |
+| `deathTime` (LE :238), `damageCooldownTime` (LE :239) | death roll, Hud heart blink trigger | no | restored | LOW |
+| `activeEffects` blend (`MobEffectInstance.BlendState` :368-405) | darkness, blindness and night vision fade | yes, but snaps (blend=false) | restored: `factor`/`factorPreviousFrame` per effect id on the local player | MEDIUM |
 | `jumpTriggerTime`, `takeXpDelay` (Player :156-157) | creative fly double-tap, XP pickup | no | gap | LOW |
 
 ## Entity (`world/entity/Entity.java`), all entities
@@ -204,11 +206,11 @@ This is every piece of client-side state that affects what is on screen or what 
 | Item | Drives | Server restore? | Capture/restore | Pri |
 |---|---|---|---|---|
 | `tickCount`, `walkAnimation`, body and head yaw, `hurtTime`, `swingState` | limb swing, rotations, hurt tint, swings | partly | Apply per UUID | MEDIUM |
-| `AnimationState.startTick` (`world/entity/AnimationState.java`): Warden, Camel, Sniffer, Breeze, Armadillo, Frog, Axolotl, Rabbit, Bat, Creaking, CopperGolem | keyframe animations | no; event-started ones are lost, data-driven ones restart | gap | MEDIUM |
-| Creeper `swell`/`oldSwell`, Guardian `clientSideAttackTime`, Shulker `currentPeekAmount`, Fox `crouchAmount`, Panda `sitAmount`/`rollAmount`, Bee `rollAmount` | lerps toward synced targets | no; restart from 0 | gap | MEDIUM |
-| IronGolem, Ravager, Hoglin, Zoglin, Creaking attack ticks; Sheep `eatAnimationTick`; Wolf `shakeAnim` | event animations | no | gap | LOW |
-| Squid tentacles, Chicken and Parrot flap, ItemEntity `age`/`bobOffs`, ExperienceOrb `age`, EndCrystal `time`, FallingBlockEntity `time`, boat paddles, arrow `shakeTime` | free-running client animations | no | `tickCount` only; the rest is a gap | LOW |
-| EnderDragon `flightHistory`, `flapTime`/`oFlapTime` | dragon body segments and wings | no | gap | MEDIUM |
+| `AnimationState.startTick` (`world/entity/AnimationState.java`): Warden, Camel, Sniffer, Breeze, Armadillo, Frog, Axolotl, Rabbit, Bat, Creaking, CopperGolem | keyframe animations | no; event-started ones are lost, data-driven ones restart | restored: every `AnimationState` field's `startTick` together with `tickCount`, by UUID | MEDIUM |
+| Creeper `swell`/`oldSwell`, Guardian `clientSideAttackTime`, Shulker `currentPeekAmount`, Fox `crouchAmount`, Panda `sitAmount`/`rollAmount`, Bee `rollAmount` | lerps toward synced targets | no; restart from 0 | restored by the generic per-entity copy (every non-final primitive declared below `LivingEntity`/`Entity`) | MEDIUM |
+| IronGolem, Ravager, Hoglin, Zoglin, Creaking attack ticks; Sheep `eatAnimationTick`; Wolf `shakeAnim` | event animations | no | restored by the generic per-entity copy | LOW |
+| Squid tentacles, Chicken and Parrot flap, ItemEntity `age`/`bobOffs`, ExperienceOrb `age`, EndCrystal `time`, FallingBlockEntity `time`, boat paddles, arrow `shakeTime` | free-running client animations | no | restored by the generic per-entity copy (primitives and `float[]`) | LOW |
+| EnderDragon `flightHistory`, `flapTime`/`oFlapTime` | dragon body segments and wings | no | restored: `flightHistory` samples and head, flap fields via the generic copy | MEDIUM |
 
 ## Camera (`client/Camera.java`)
 
@@ -226,8 +228,8 @@ This is every piece of client-side state that affects what is on screen or what 
 | `GameRenderer.bossOverlayWorldDarkening`/`O` :114-115 | boss-bar world darkening | no | Apply | MEDIUM |
 | `LightmapRenderStateExtractor.blockLightFlicker` :24 | torch and block light flicker | no | Apply | LOW |
 | `LightmapRenderStateExtractor.randomSource` :23 (LegacyRandomSource `seed` :14) | flicker random walk | no | Apply (seed restored) | LOW |
-| `LightmapRenderStateExtractor.needsUpdate` :20 | lightmap rebuild | no | gap (set by the next tick after Resume) | LOW |
-| `AtmosphericFogEnvironment.rainFogMultiplier` (`client/renderer/fog/environment/AtmosphericFogEnvironment.java:25`) | rain fog distance, eased per frame | no | gap | MEDIUM |
+| `LightmapRenderStateExtractor.needsUpdate` :20 | lightmap rebuild | no | set to true at Apply | LOW |
+| `AtmosphericFogEnvironment.rainFogMultiplier` (`client/renderer/fog/environment/AtmosphericFogEnvironment.java:25`) | rain fog distance, eased per frame | no | restored (found through `FogRenderer.FOG_ENVIRONMENTS`) | MEDIUM |
 | Water, lava, powder snow, blindness and darkness fog | read player and effect state | stateless | via player fields | — |
 | `spectatedEntityPostEffect` :130 | spectator shaders | yes | none | LOW |
 
@@ -235,7 +237,7 @@ This is every piece of client-side state that affects what is on screen or what 
 
 | Item | Drives | Server restore? | Capture/restore | Pri |
 |---|---|---|---|---|
-| `ParticleEngine.particles`/`trackingEmitters`/`particlesToAdd` :29-31 | live particles | only cleared on a dimension change | cleared at Apply (not restorable) | HIGH |
+| `ParticleEngine.particles`/`trackingEmitters`/`particlesToAdd` :29-31 | live particles | only cleared on a dimension change | restored: every particle, pending particle and tracking emitter deep-copied at capture (in memory, reflective field copy, own `RandomSource` state) and copied back with the level and entity references rebound; particles whose entity is gone are dropped | HIGH |
 | `SoundEngine` playing instances and ticking sounds :65-77 | sounds in flight | stopped only on a dimension change | gap: positions not restored | MEDIUM |
 | `MusicManager.currentMusic`/`nextSongDelay` :22-25 | background music | no | gap | LOW |
 
@@ -247,8 +249,8 @@ This is every piece of client-side state that affects what is on screen or what 
 | `ChatComponent.chatScrollbarPos`/`newMessageSinceScroll` :68-69 | scroll position | no | Apply | LOW |
 | `ChatComponent.messageDeletionQueue` :72 | pending deletions | no | gap | LOW |
 | `BossHealthOverlay.events` :54 | boss bars | partly; stale bars stay unless removed | progress lerp on VisualClock; set re-sent by server | MEDIUM |
-| `SubtitleOverlay.subtitles` :25 | subtitles | no | gap | LOW |
-| `ToastManager.visibleToasts`/`queued` :27-29 | toasts | no | gap | LOW |
+| `SubtitleOverlay.subtitles` :25 | subtitles | no | restored (in memory) | LOW |
+| `ToastManager.visibleToasts`/`queued` :27-29 | toasts | no | restored with `occupiedSlots` (in memory); the now-playing music toast is left to the audio owner | MEDIUM |
 | `PlayerTabOverlay.visible`/`healthStates` :63-64 | tab list and its heart blink | no | gap | LOW |
 
 ## Options (`client/Options.java`)
