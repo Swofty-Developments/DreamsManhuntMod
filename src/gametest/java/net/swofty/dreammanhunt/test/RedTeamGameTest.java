@@ -76,23 +76,28 @@ public final class RedTeamGameTest implements FabricClientGameTest {
 		this.writeReport(context);
 	}
 
-	private record Scene(String name, Consumer<Env> setup, Consumer<Env> preCapture, Consumer<Env> preRestore, boolean viaMenu, int settle) {
+	private record Scene(String name, Consumer<Env> setup, Consumer<Env> preCapture, Consumer<Env> preRestore, Consumer<Env> timeline, boolean viaMenu, int settle) {
 		Scene(String name, Consumer<Env> setup) {
 			this(name, setup, env -> {
+			}, env -> {
 			}, env -> {
 			}, false, 60);
 		}
 
 		Scene menu() {
-			return new Scene(this.name, this.setup, this.preCapture, this.preRestore, true, this.settle);
+			return new Scene(this.name, this.setup, this.preCapture, this.preRestore, this.timeline, true, this.settle);
 		}
 
 		Scene before(Consumer<Env> pre) {
-			return new Scene(this.name, this.setup, pre, this.preRestore, this.viaMenu, this.settle);
+			return new Scene(this.name, this.setup, pre, this.preRestore, this.timeline, this.viaMenu, this.settle);
 		}
 
 		Scene beforeRestore(Consumer<Env> pre) {
-			return new Scene(this.name, this.setup, this.preCapture, pre, this.viaMenu, this.settle);
+			return new Scene(this.name, this.setup, this.preCapture, pre, this.timeline, this.viaMenu, this.settle);
+		}
+
+		Scene during(Consumer<Env> events) {
+			return new Scene(this.name, this.setup, this.preCapture, this.preRestore, events, this.viaMenu, this.settle);
 		}
 	}
 
@@ -111,7 +116,7 @@ public final class RedTeamGameTest implements FabricClientGameTest {
 		}
 
 		void summon(String type, double dx, double dy, double dz, String nbt) {
-			this.cmd("summon %s %.2f %.2f %.2f %s", type, this.o.getX() + 0.5 + dx, this.o.getY() + dy, this.o.getZ() + 0.5 + dz, nbt);
+			this.cmd(("summon %s %.2f %.2f %.2f " + nbt).trim(), type, this.o.getX() + 0.5 + dx, this.o.getY() + dy, this.o.getZ() + 0.5 + dz);
 		}
 
 		void tp(double dx, double dy, double dz, float yaw, float pitch) {
@@ -273,8 +278,8 @@ public final class RedTeamGameTest implements FabricClientGameTest {
 			env.tp(0, 1, 0, 0, 0);
 		}));
 		list.add(new Scene("nether", env -> {
-			env.cmd("execute in minecraft:the_nether run fill -6 70 -6 6 77 12 minecraft:air");
-			env.cmd("execute in minecraft:the_nether run fill -6 69 -6 6 69 12 minecraft:netherrack");
+			env.cmd("execute in minecraft:the_nether run fill -8 68 -8 8 80 14 minecraft:glass hollow");
+			env.cmd("execute in minecraft:the_nether run fill -7 69 -7 7 69 13 minecraft:netherrack");
 			env.cmd("execute in minecraft:the_nether run tp @p 0.5 70 0.5 0 0");
 		}));
 		list.add(new Scene("end_sky", env -> {
@@ -364,8 +369,8 @@ public final class RedTeamGameTest implements FabricClientGameTest {
 			env.tp(0, 0, 0, 0, 10);
 		}));
 		list.add(new Scene("nether_compass_clock", env -> {
-			env.cmd("execute in minecraft:the_nether run fill -6 70 -6 6 77 12 minecraft:air");
-			env.cmd("execute in minecraft:the_nether run fill -6 69 -6 6 69 12 minecraft:netherrack");
+			env.cmd("execute in minecraft:the_nether run fill -8 68 -8 8 80 14 minecraft:glass hollow");
+			env.cmd("execute in minecraft:the_nether run fill -7 69 -7 7 69 13 minecraft:netherrack");
 			env.cmd("execute in minecraft:the_nether run tp @p 0.5 70 0.5 0 10");
 			env.cmd("item replace entity @p weapon.mainhand with minecraft:compass");
 			env.cmd("item replace entity @p weapon.offhand with minecraft:clock");
@@ -392,6 +397,17 @@ public final class RedTeamGameTest implements FabricClientGameTest {
 			env.block(0, 0, 5, "minecraft:stone");
 			env.tp(0, 0, 0, 0, 15);
 		}));
+		list.add(new Scene("lightning_obfuscated", env -> env.tp(0, 0, 0, 0, -10))
+			.before(env -> {
+				env.cmd("title @p times 0 400 0");
+				env.cmd("title @p title {\"text\":\"Secret 12345\",\"obfuscated\":true}");
+				env.cmd("title @p subtitle {\"text\":\"abcdefghijklmnop\",\"obfuscated\":true,\"color\":\"gold\"}");
+				env.context.waitTicks(2);
+			})
+			.during(env -> {
+				env.summon("minecraft:lightning_bolt", -3, 0, 12, "");
+				env.summon("minecraft:lightning_bolt", 4, 0, 16, "");
+			}));
 		list.add(new Scene("hotbar_pop", env -> {
 			env.cmd("item replace entity @p hotbar.2 with minecraft:cobblestone 12");
 			env.tp(0, 0, 0, 0, 10);
@@ -425,6 +441,7 @@ public final class RedTeamGameTest implements FabricClientGameTest {
 		String prefix = String.format(Locale.ROOT, "rt%02d-%s", index, scene.name);
 
 		List<Path> afterCapture = new ArrayList<>();
+		runTimeline(context, scene, env, capturedHud);
 		recordFrames(context, prefix + "-cap", base, afterCapture);
 
 		disturb(context, server, env);
@@ -443,6 +460,7 @@ public final class RedTeamGameTest implements FabricClientGameTest {
 		if (resumedHud > base) {
 			status = "LATE resume at hud " + resumedHud + " > " + base;
 		} else {
+			runTimeline(context, scene, env, capturedHud);
 			recordFrames(context, prefix + "-res", base, afterResume);
 			StringBuilder line = new StringBuilder();
 			double worst = 0;
@@ -461,8 +479,20 @@ public final class RedTeamGameTest implements FabricClientGameTest {
 		server.runCommand("savestate delete " + id);
 	}
 
+	private static void runTimeline(ClientGameTestContext context, Scene scene, Env env, int capturedHud) {
+		while (hudTicks(context) < capturedHud + 1) {
+			context.waitTick();
+		}
+		scene.timeline.accept(env);
+	}
+
 	private static void prepare(ClientGameTestContext context, TestServerContext server, Env env) {
 		resetClient(context);
+		if (context.computeOnClient(mc -> mc.player.isDeadOrDying())) {
+			context.runOnClient(mc -> mc.player.respawn());
+			context.waitTicks(20);
+			resetClient(context);
+		}
 		server.runCommand("execute in minecraft:overworld run tp @p " + (env.o.getX() + 0.5) + " " + env.o.getY() + " " + (env.o.getZ() + 0.5) + " 0 0");
 		context.waitTicks(5);
 		server.runCommand("kill @e[type=!minecraft:player]");

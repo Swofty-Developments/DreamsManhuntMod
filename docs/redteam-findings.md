@@ -121,12 +121,12 @@ Evidence: `beacon` (key + menu path), frame +16 only: the hearts draw with the w
 
 These only show on screens (pause/options buttons, the savestate menu), not in-world. Fix: route both through `VisualClock`.
 
-### 11. Theoretical RNG-state leaks (c in practice) — not fixed
+### 11. Theoretical RNG-state leaks (c in practice) — closed at the root (see "Randomness at the root")
 
 - `world/entity/LightningBolt.java:46,122`: the bolt shape is fully determined by `seed = random.nextLong()` drawn from a fresh `RandomSource.create()`, which is `seedUniquifier ^ nanoTime` (`world/level/levelgen/RandomSupport.java:14,41`).
 - `client/gui/Font.java:34,91`: one session-wide RNG for `§k` glyphs.
 
-In principle both expose nanoTime (uptime since boot) bits, but recovering them from rendered pixels is impractical.
+In principle both expose nanoTime (uptime since boot) bits, but recovering them from rendered pixels is impractical. Since the root fix, both come from restorable seed streams instead of `nanoTime`, so neither leaks uptime and both repeat exactly after a restore.
 
 ### 12. Wall-clock date (by design) — not fixed
 
@@ -138,6 +138,36 @@ Both show the real date, and only around 24-26 December.
 ### Checked and clean
 
 Clouds, rain/snow columns, banners, beacon/gateway beam scroll, end-portal shader `GameTime` (`client/renderer/GlobalSettingsUniform.java:34`, the only jar shader that reads it is `core/rendertype_end_portal.fsh`), stars (fixed seed 10842), moon phase and sunset all derive from server `gameTime`/clock and matched exactly (`clouds`, `night_sky`, `moon_phase` 0.00000). Chunk section fade-in is relative to upload and is waited out by `ViewReadiness`.
+
+## Randomness at the root
+
+Everything random in the game is pseudo-random. Instead of chasing generators one by one, the mod puts back the state that fresh randomness is drawn from, on both sides.
+
+### Every source of fresh randomness in vanilla 26.3
+
+| Source | Call sites | Thread | Visible or simulated effect | Routed through the seed stream? |
+|---|---|---|---|---|
+| `RandomSupport.generateUniqueSeed()` (`world/level/levelgen/RandomSupport.java:40`, `SEED_UNIQUIFIER * … ^ System.nanoTime()`) | Behind `RandomSource.create()` (34 call sites; every `Entity.random` at `world/entity/Entity.java:255`, `Level.random` at `world/level/Level.java:123`, `Particle.random` at `client/particle/Particle.java:36`, `ParticleEngine`, `Font.random` at `client/gui/Font.java:34`, `EnchantingTableBlockEntity.RANDOM`, compass/clock wobbler RNGs, lightmap flicker, …) and `RandomSource.createThreadSafe()`. Direct worldgen uses: `NoiseBasedChunkGenerator.java:236,468`, `ChunkGenerator.java:346`, `OceanMonumentStructure.java:59`. | Client main, server main, worldgen workers | Entity UUIDs (`Entity.java:289`, `Mth.createInsecureUUID(random)`), lightning bolt shape (`LightningBolt.java:46,122`), particle motion, mob AI rolls on new entities, §k glyphs, page flips | Yes, on the client and server main threads. Other threads keep vanilla behaviour. |
+| `RandomSource.createThreadLocalInstance()` (`util/RandomSource.java:27`, `ThreadLocalRandom.current().nextLong()`) | `ClientLevel.java:571` (animateTick ambient particles), `Level.java:117` (`randValue`, lightning/snow/ice chunk positions), `AngerManagement.java:35` (warden), `SpreadPlayersCommand.java:117`, `PlayerSpawnFinder.java:47`. Re-seeded straight away, so harmless: `WeatherEffectRenderer.java:76`, `LevelRenderer.java:1007`. Menus only: `LogoRenderer.java:23`, `TeleportToTeamMenuCategory.java:95`. Off-thread: `QueryThreadGs4.java:284`, `NativeLibrariesBootstrap.java:114`, `EntityZombieVillagerTypeFix.java:21`. | Mixed | Ambient particles, weather tick positions, warden anger delay, spawn placement | Yes, for the five gameplay call sites (call-site wraps). The rest are re-seeded straight away, menu-only or off-thread. |
+| `ThreadLocalRandom` | Only inside `RandomSource.createThreadLocalInstance()` | — | — | Covered above |
+| `new java.util.Random()` without a seed | None in 26.3 | — | — | — |
+| `Math.random()` | `client/gui/render/TextureSetup.java:45`, `com/mojang/renderpearl/api/pipeline/RenderPipeline.java:71` (static sort-key seeds, fixed per session); `ServerConnectionListener.java:225` (lag-simulation jitter) | Class init / netty | Draw-order tie-break key, constant for the whole session, so not a cut tell | No (constant per session) |
+| `UUID.randomUUID()` | `CustomBossEvents.java:23` (load), `ServerConnectionListener.java:200` (memory connection), chat/name/skin reports | Server main / client | Not visible | No |
+| `SecureRandom` | `server/jsonrpc/security/SecurityConfig.java:13` | — | Not visible | No |
+| Seeds from `nanoTime`/`currentTimeMillis` | Only via `generateUniqueSeed` | — | — | Covered above |
+
+### What the mod does
+
+The logic lives in `net.swofty.dreammanhunt.randomroot.SeedStreams`. Its mixins are in `dreammanhunt.randomroot.mixins.json` (environment `*`); the client-only hooks are in `dreammanhunt.clientextra.mixins.json`.
+
+- **Two seed streams.** There is one for the client main thread and one for the server main thread. Each is a `LegacyRandomSource` seeded from `SecureRandom` at startup, so new worlds still get random seeds. On those threads, `generateUniqueSeed()` (`RandomSupportMixin`) and the gameplay `createThreadLocalInstance()` call sites (`ThreadLocalRandomCallsMixin`, `SpreadPlayersCommandMixin`, `ClientLevelAnimateMixin`) draw from the stream. Calls from any other thread (worldgen, netty, IO, sound) stay vanilla.
+- **Every generator created on a main thread is registered** in a weak identity set (`RandomSourceRegistryMixin` on all four `RandomSource` implementations). A capture records the stream seed and the internal state of every live generator. A restore puts both back. Long-lived generators (`Font.random`, `EnchantingTableBlockEntity.RANDOM`, compass/clock wobbler RNGs, `ParticleEngine.random`, `SpellParticle.RANDOM`, the level RNG, …) therefore continue exactly where they were. The generator states are kept in memory (64 snapshots per side); the stream seed is persisted.
+- **Client entities built from add-entity packets** (`AddEntitySeedMixin`) take their constructor seeds from `hash(uuid) ^ session salt` instead of the stream. Their randomness (lightning bolt shape, squid tentacles, …) then does not depend on when the packet happens to arrive. The salt is captured and restored with the stream.
+- **Entities loaded from disk or a snapshot** (`EntityType.create` with `EntitySpawnReason.LOAD`, `EntityTypeMixin`) do not draw from the server stream. Chunk loading after a restore therefore cannot shift the stream.
+- **Server hooks.** The stream is captured in `RuntimeState.capture` and re-applied after the restore's level rebuild, through one line each in the engine. It is applied once more at the start of the first unfrozen server tick (`MinecraftServerMixin`), which discards whatever the rebuild, player re-attachment and the barrier consumed.
+- **Client hooks.** The stream is captured and applied through `RandomStates`, which is part of `ExtraState`, so it is restored again at Resume.
+
+This closes finding 11 at the root: the bolt shape comes from the UUID that the restored server stream reproduces, and the §k glyph RNG is restored. Scene `lightning_obfuscated` is the proof: two bolts are summoned 1 tick after the save in both timelines, with an obfuscated title and subtitle on screen.
 
 ## Scene matrix
 

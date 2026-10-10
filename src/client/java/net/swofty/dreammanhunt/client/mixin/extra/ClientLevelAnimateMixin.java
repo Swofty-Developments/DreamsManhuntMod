@@ -4,7 +4,7 @@ import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.util.RandomSource;
-import net.swofty.dreammanhunt.client.state.extra.RandomStates;
+import net.swofty.dreammanhunt.randomroot.SeedStreams;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 
@@ -12,6 +12,6 @@ import org.spongepowered.asm.mixin.injection.At;
 public abstract class ClientLevelAnimateMixin {
 	@WrapOperation(method = "animateTick", at = @At(value = "INVOKE", target = "Lnet/minecraft/util/RandomSource;createThreadLocalInstance()Lnet/minecraft/util/RandomSource;"))
 	private RandomSource dm$restorableAnimateRandom(Operation<RandomSource> original) {
-		return RandomSource.createThreadLocalInstance(RandomStates.nextAnimateSeed());
+		return SeedStreams.threadLocal(original::call);
 	}
 }

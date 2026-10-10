@@ -109,6 +109,7 @@ final class RuntimeState {
 		}
 		tag.put("players", players);
 		tag.put("entities", entities);
+		net.swofty.dreammanhunt.randomroot.SeedStreams.captureServer(tag);
 		return new RuntimeState(tag);
 	}
 
@@ -136,6 +137,7 @@ final class RuntimeState {
 	}
 
 	void applyServerCounters(MinecraftServer server) {
+		net.swofty.dreammanhunt.randomroot.SeedStreams.applyServer(this.tag);
 		((MinecraftServerAccessor) server).dreammanhunt$setTickCount(this.tag.getIntOr("server_tick_count", server.getTickCount()));
 	}
 

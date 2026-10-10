@@ -5,39 +5,21 @@ import java.lang.reflect.Modifier;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
+import net.swofty.dreammanhunt.randomroot.SeedStreams;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.levelgen.LegacyRandomSource;
 
 public final class RandomStates {
-	private static final RandomSource ANIMATE = new LegacyRandomSource(RandomSource.create().nextLong());
-	private static final RandomSource PARTICLE = new LegacyRandomSource(RandomSource.create().nextLong());
-
 	private RandomStates() {
-	}
-
-	public static long nextAnimateSeed() {
-		synchronized (ANIMATE) {
-			return ANIMATE.nextLong();
-		}
-	}
-
-	public static long nextParticleSeed() {
-		synchronized (PARTICLE) {
-			return PARTICLE.nextLong();
-		}
 	}
 
 	static CompoundTag capture(Minecraft minecraft) {
 		CompoundTag tag = new CompoundTag();
-		synchronized (ANIMATE) {
-			tag.put("animate", state(ANIMATE));
-		}
-		synchronized (PARTICLE) {
-			tag.put("particle", state(PARTICLE));
-		}
+		tag.put("stream", SeedStreams.CLIENT.capture());
+		tag.put("font", state(read(Font.class, "random", minecraft.font)));
 		tag.put("spell", state(read(net.minecraft.client.particle.SpellParticle.class, "RANDOM", null)));
 		tag.put("level", state(read(Level.class, "random", minecraft.level)));
 		tag.put("particles", state(read(minecraft.particleEngine.getClass(), "random", minecraft.particleEngine)));
@@ -53,12 +35,8 @@ public final class RandomStates {
 		if (tag.isEmpty()) {
 			return;
 		}
-		synchronized (ANIMATE) {
-			restore(ANIMATE, tag.getCompoundOrEmpty("animate"));
-		}
-		synchronized (PARTICLE) {
-			restore(PARTICLE, tag.getCompoundOrEmpty("particle"));
-		}
+		SeedStreams.CLIENT.apply(tag.getCompoundOrEmpty("stream"));
+		restore(read(Font.class, "random", minecraft.font), tag.getCompoundOrEmpty("font"));
 		restore(read(net.minecraft.client.particle.SpellParticle.class, "RANDOM", null), tag.getCompoundOrEmpty("spell"));
 		restore(read(Level.class, "random", minecraft.level), tag.getCompoundOrEmpty("level"));
 		restore(read(minecraft.particleEngine.getClass(), "random", minecraft.particleEngine), tag.getCompoundOrEmpty("particles"));
