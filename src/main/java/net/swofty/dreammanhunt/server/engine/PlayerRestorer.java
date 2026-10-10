@@ -33,6 +33,7 @@ import net.minecraft.world.level.storage.TagValueOutput;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
+import net.swofty.dreammanhunt.mixin.server.LevelAccessor;
 import net.swofty.dreammanhunt.mixin.server.PlayerListAccessor;
 import net.swofty.dreammanhunt.mixin.server.ServerGamePacketListenerImplInvoker;
 import org.slf4j.Logger;
@@ -153,7 +154,7 @@ final class PlayerRestorer {
 			Vec2 rotation = saved.rotation().orElseGet(() -> new Vec2(old.getYRot(), old.getXRot()));
 			this.prepareChunks(level, position);
 
-			ServerPlayer player = new ServerPlayer(this.server, level, old.getGameProfile(), old.clientInformation());
+			ServerPlayer player = EntityIds.deferred(() -> new ServerPlayer(this.server, level, old.getGameProfile(), old.clientInformation()));
 			player.load(input);
 			if (snapshotData.isEmpty()) {
 				EntityRuntimeRestorer.applyTag(player, entry.liveEntity());
@@ -176,12 +177,10 @@ final class PlayerRestorer {
 			connection.send(new ClientboundSetExperiencePacket(player.experienceProgress, player.totalExperience, player.experienceLevel));
 			this.playerList.sendActivePlayerEffects(player);
 			player.sendPostEffects();
-			if (!level.isRaining()) {
-				connection.send(new ClientboundGameEventPacket(ClientboundGameEventPacket.STOP_RAINING, 0.0F));
-				connection.send(new ClientboundGameEventPacket(ClientboundGameEventPacket.RAIN_LEVEL_CHANGE, 0.0F));
-				connection.send(new ClientboundGameEventPacket(ClientboundGameEventPacket.THUNDER_LEVEL_CHANGE, 0.0F));
-			}
 			this.playerList.sendLevelInfo(player, level);
+			LevelAccessor weather = (LevelAccessor) level;
+			connection.send(new ClientboundGameEventPacket(ClientboundGameEventPacket.RAIN_LEVEL_CHANGE, weather.dreammanhunt$getRainLevel()));
+			connection.send(new ClientboundGameEventPacket(ClientboundGameEventPacket.THUNDER_LEVEL_CHANGE, weather.dreammanhunt$getThunderLevel()));
 			this.playerList.sendPlayerPermissionLevel(player);
 			player.getRecipeBook().sendInitialRecipeBook(player);
 			if (runtime != null) {

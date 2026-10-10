@@ -185,6 +185,7 @@ public final class SavestateEngine {
 		state.applyLevelData(this.server);
 		GameRuleMap restoredRules = world.reloadGlobalData();
 		state.armEntityRuntime();
+		state.applyEntityCounter();
 		world.createLevels();
 		Failpoint.check("levels");
 		world.applyGameRules(restoredRules);

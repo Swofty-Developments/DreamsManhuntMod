@@ -10,10 +10,12 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.TickRateManager;
 import net.swofty.dreammanhunt.DreamManhunt;
 import net.swofty.dreammanhunt.api.SavestateInfo;
+import net.swofty.dreammanhunt.mixin.common.PlayerChunkSenderAccessor;
 import net.swofty.dreammanhunt.network.SavestatePayloads;
 import net.swofty.dreammanhunt.server.engine.SavestateEngine;
 import org.jspecify.annotations.Nullable;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -239,6 +241,7 @@ public final class SavestateCoordinator {
 			requester.failure(tr("dreammanhunt.notice.restore_failed", String.valueOf(e.getMessage())));
 		}
 
+		DreamManhunt.LOGGER.info("Restore {} barrier: waiting for {}", id, this.names(participants));
 		ServerTickRateManager tickRate = this.server.tickRateManager();
 		Barrier barrier = new Barrier(id, info.name(), requester, participants, tickRate.isFrozen(), tickRate.frozenTicksToRun(),
 				System.nanoTime() + TimeUnit.SECONDS.toNanos(SavestateConfig.get().readyTimeoutSeconds()), failed);
@@ -264,7 +267,10 @@ public final class SavestateCoordinator {
 		if (barrier == null || !barrier.id.equals(id)) {
 			return;
 		}
-		barrier.pending.remove(player.getUUID());
+		if (barrier.pending.remove(player.getUUID())) {
+			DreamManhunt.LOGGER.info("Restore {} barrier: {} ready after {} ms, {} pending", id, player.getPlainTextName(),
+					TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - barrier.startNanos), barrier.pending.size());
+		}
 		this.checkComplete();
 	}
 
@@ -273,9 +279,38 @@ public final class SavestateCoordinator {
 		if (barrier == null) {
 			return;
 		}
-		barrier.pending.remove(uuid);
+		if (barrier.pending.remove(uuid)) {
+			DreamManhunt.LOGGER.info("Restore {} barrier: participant {} left, {} pending", barrier.id, uuid, barrier.pending.size());
+		}
 		barrier.participants.remove(uuid);
 		this.checkComplete();
+	}
+
+	public void afterTick() {
+		if (this.barrier != null) {
+			this.syncEntityTracking();
+			this.checkComplete();
+		}
+	}
+
+	private boolean chunksDelivered(Barrier barrier) {
+		for (UUID uuid : barrier.participants) {
+			ServerPlayer player = this.server.getPlayerList().getPlayer(uuid);
+			if (player == null) {
+				continue;
+			}
+			PlayerChunkSenderAccessor sender = (PlayerChunkSenderAccessor) player.connection.chunkSender;
+			if (!sender.dreammanhunt$pendingChunks().isEmpty() || sender.dreammanhunt$unacknowledgedBatches() > 0) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private void syncEntityTracking() {
+		for (ServerPlayer player : this.server.getPlayerList().getPlayers()) {
+			player.level().getChunkSource().move(player);
+		}
 	}
 
 	public void poll() {
@@ -288,9 +323,17 @@ public final class SavestateCoordinator {
 
 	private void checkComplete() {
 		Barrier barrier = this.barrier;
-		if (barrier != null && barrier.pending.isEmpty()) {
-			this.finish(barrier, false);
+		if (barrier == null || !barrier.pending.isEmpty()) {
+			return;
 		}
+		if (!this.chunksDelivered(barrier)) {
+			if (!barrier.waitingForChunks) {
+				barrier.waitingForChunks = true;
+				DreamManhunt.LOGGER.info("Restore {} barrier: everyone is ready, waiting for chunk delivery", barrier.id);
+			}
+			return;
+		}
+		this.finish(barrier, false);
 	}
 
 	private void finish(Barrier barrier, boolean timedOut) {
@@ -298,6 +341,7 @@ public final class SavestateCoordinator {
 			return;
 		}
 		this.barrier = null;
+		this.syncEntityTracking();
 		ServerTickRateManager tickRate = this.server.tickRateManager();
 		FROZEN.remove(tickRate);
 		tickRate.setFrozen(barrier.restoredFrozen);
@@ -311,11 +355,22 @@ public final class SavestateCoordinator {
 			}
 		}
 		this.busy = false;
+		DreamManhunt.LOGGER.info("Restore {} barrier: resumed after {} ms (timed out: {})", barrier.id,
+				TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - barrier.startNanos), timedOut);
 		if (timedOut) {
 			barrier.requester.failure(tr("dreammanhunt.notice.restore_timeout", barrier.pending.size()));
 		} else if (!barrier.failed && barrier.requester.isCommand()) {
 			barrier.requester.success(tr("dreammanhunt.notice.restored", barrier.name));
 		}
+	}
+
+	private List<String> names(Set<UUID> uuids) {
+		List<String> names = new ArrayList<>();
+		for (UUID uuid : uuids) {
+			ServerPlayer player = this.server.getPlayerList().getPlayer(uuid);
+			names.add(player == null ? uuid.toString() : player.getPlainTextName());
+		}
+		return names;
 	}
 
 	private static final class Barrier {
@@ -328,6 +383,8 @@ public final class SavestateCoordinator {
 		final int restoredStepTicks;
 		final long deadlineNanos;
 		final boolean failed;
+		final long startNanos = System.nanoTime();
+		boolean waitingForChunks;
 
 		Barrier(String id, String name, Requester requester, Set<UUID> participants, boolean restoredFrozen, int restoredStepTicks,
 				long deadlineNanos, boolean failed) {

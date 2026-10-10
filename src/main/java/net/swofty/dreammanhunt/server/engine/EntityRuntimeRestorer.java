@@ -2,6 +2,7 @@ package net.swofty.dreammanhunt.server.engine;
 
 import net.minecraft.core.UUIDUtil;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
@@ -27,12 +28,13 @@ public final class EntityRuntimeRestorer {
 
 	public static void apply(Entity entity) {
 		Map<UUID, CompoundTag> runtime = pending;
-		if (runtime.isEmpty()) {
-			return;
-		}
-		CompoundTag tag = runtime.remove(entity.getUUID());
+		CompoundTag tag = runtime.isEmpty() ? null : runtime.remove(entity.getUUID());
 		if (tag != null) {
 			applyTag(entity, tag);
+		}
+		if (entity.getId() < 0 && entity.level() instanceof ServerLevel level) {
+			int saved = tag == null ? 0 : tag.getIntOr("id", 0);
+			entity.setId(saved > 0 && !EntityIds.isLive(level.getServer(), saved) ? saved : EntityIds.allocate(level.getServer()));
 		}
 	}
 
@@ -60,6 +62,7 @@ public final class EntityRuntimeRestorer {
 	static CompoundTag capture(Entity entity) {
 		CompoundTag tag = new CompoundTag();
 		tag.store("uuid", UUIDUtil.CODEC, entity.getUUID());
+		tag.putInt("id", entity.getId());
 		EntityAccessor accessor = (EntityAccessor) entity;
 		if (accessor.dreammanhunt$getRandom() instanceof LegacyRandomSource random) {
 			tag.putLong("seed", ((LegacyRandomSourceAccessor) random).dreammanhunt$getSeed().get());

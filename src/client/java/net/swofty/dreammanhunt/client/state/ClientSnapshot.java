@@ -75,6 +75,7 @@ public final class ClientSnapshot {
 		root.put("fades", FadeState.capture(minecraft));
 		root.put("destroyProgress", captureDestroyProgress(minecraft.level));
 		root.put("audio", net.swofty.dreammanhunt.client.state.audio.AudioState.capture(minecraft));
+		net.swofty.dreammanhunt.client.state.extra.ExtraState.capture(minecraft, root);
 		LiveStates.Live live = LiveStates.create(root);
 		live.chat = new ArrayList<>(((ChatComponentAccessor) minecraft.gui.hud.getChat()).dm$getAllMessages());
 		live.particles = ParticleState.capture(minecraft);
@@ -108,6 +109,7 @@ public final class ClientSnapshot {
 		applyLevel(minecraft.level, root.getCompoundOrEmpty("level"));
 		applyEntities(minecraft, root.getListOrEmpty("entities"));
 		applyChat(minecraft, root, ops);
+		net.swofty.dreammanhunt.client.state.extra.ExtraState.apply(minecraft, root);
 		net.minecraft.client.Camera camera = minecraft.gameRenderer.mainCamera();
 		camera.attributeProbe().reset();
 		camera.attributeProbe().tick(minecraft.level, camera.position());

@@ -18,4 +18,28 @@ public interface LevelAccessor {
 
 	@Accessor("randValue")
 	void dreammanhunt$setRandValue(int randValue);
+
+	@Accessor("oRainLevel")
+	float dreammanhunt$getORainLevel();
+
+	@Accessor("oRainLevel")
+	void dreammanhunt$setORainLevel(float level);
+
+	@Accessor("rainLevel")
+	float dreammanhunt$getRainLevel();
+
+	@Accessor("rainLevel")
+	void dreammanhunt$setRainLevel(float level);
+
+	@Accessor("oThunderLevel")
+	float dreammanhunt$getOThunderLevel();
+
+	@Accessor("oThunderLevel")
+	void dreammanhunt$setOThunderLevel(float level);
+
+	@Accessor("thunderLevel")
+	float dreammanhunt$getThunderLevel();
+
+	@Accessor("thunderLevel")
+	void dreammanhunt$setThunderLevel(float level);
 }
