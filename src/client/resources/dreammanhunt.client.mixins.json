@@ -27,6 +27,7 @@
 		"MinecraftAccessor",
 		"MinecraftMixin",
 		"MouseHandlerMixin",
+		"MultiPlayerGameModeAccessor",
 		"OptionsAccessor",
 		"ParticleEngineInvoker",
 		"PlayerAccessor",
