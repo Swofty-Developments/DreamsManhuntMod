@@ -139,6 +139,33 @@ Both show the real date, and only around 24-26 December.
 
 Clouds, rain/snow columns, banners, beacon/gateway beam scroll, end-portal shader `GameTime` (`client/renderer/GlobalSettingsUniform.java:34`, the only jar shader that reads it is `core/rendertype_end_portal.fsh`), stars (fixed seed 10842), moon phase and sunset all derive from server `gameTime`/clock and matched exactly (`clouds`, `night_sky`, `moon_phase` 0.00000). Chunk section fade-in is relative to upload and is waited out by `ViewReadiness`.
 
+### 13. Spawner display mob fails to load on the client since main `bca5376` (b) — handed off to engine
+
+Every frame, `BaseSpawner.getOrCreateDisplayEntity` (`world/level/BaseSpawner.java:259`) on the **Render thread** goes through the engine's `EntityType.create` id-deferral wrapper and `Entity.load` hook. `EntityRuntimeRestorer.apply` (`server/engine/EntityRuntimeRestorer.java:35`) then calls `getId()` before an id is assigned and throws `IllegalStateException: Tried to access entity ID before ID assignment`.
+
+The spawner cage renders empty, and the log fills with thousands of stack traces. In the matrix this does not show as a diff only because it is equally broken in both timelines. The fix belongs to the engine: skip the runtime hook on client levels, or for entities that have no id yet.
+
+### 14. Restoring into the Nether kills the player in lava (b) — handed off to engine
+
+Scenes `nether` and `nether_compass_clock` build a sealed glass box at Nether y 68-80 before the save. In the uncut timeline the player stands inside it. After the restore, the player "tried to swim in lava" between +10 and +16 ticks and gets the death screen (64-75% of the frame differs). The log shows `Player0 standing on air - force-sending blocks below`. The Nether blocks or the player position around the restore need checking.
+
+### 15. Open screens are not restored (b) — handed off to client-state
+
+When the save happens with the inventory open (`inventory_glint`), the resumed game has the screen closed (97-98% differs). The death screen (`elytra`, where the setup fall killed the player) comes back with its 20-tick button delay restarted (`client/gui/screens/DeathScreen.java`, `delayTicker`), so its buttons render disabled.
+
+### 16. Active item use is dropped by the restore (b) — handed off to engine and client-state
+
+`spyglass` saves while the spyglass is in use, with the use key still held. After the restore the scope overlay is gone and the item is lowered (60% differs). The client re-applies `startUsingItem`, but the restored server player is not using the item and stops the use. The use key is held through the restore and is never re-pressed, so vanilla never restarts it. The same applies to bows, eating, shields and tridents.
+
+### 17. Remaining residuals not explained in the time box
+
+- `snow`: rain columns diverge from +16 ticks (8.6%), the same pattern as finding 4 before the engine fix. This scene sets the weather after a `fillbiome`. Possibly a weather-transition edge case.
+- `campfire_fire`: smoke diverges from +10 ticks (6.3%). It was 0.000% in the run before the latest main merge (run 7, same red-team code), so something in that merge shifts the client particle stream. Use `REDTEAM_SEEDDEBUG=1` to list the call site of every stream draw in both timelines.
+- `enchanting_table` (0.76%): page flips use the static `EnchantingTableBlockEntity.RANDOM`. In singleplayer both the integrated server thread and the client thread tick enchanting tables, so they race on that one generator. This cannot be made deterministic without splitting it per side. On a dedicated server only the client draws from it.
+- `lightning_obfuscated`: both bolts are pixel-identical (seeded from the restored UUID). The obfuscated glyphs still differ. The per-frame glyph seed mixes in the frame's partial tick, and the harness does not pin it the same way for both timelines.
+- `fluids` (6.7%) and `walking` (7.8%): finding 8 (player moving at the save).
+- `hotbar_pop` (5.6%): the obfuscated title from the previous scene is still on screen, so it shows the glyph residual above.
+
 ## Randomness at the root
 
 Everything random in the game is pseudo-random. Instead of chasing generators one by one, the mod puts back the state that fresh randomness is drawn from, on both sides.
@@ -172,4 +199,55 @@ This closes finding 11 at the root: the bolt shape comes from the UUID that the 
 
 ## Scene matrix
 
-(filled in from the latest run)
+"Before fixes" is run 2 (main at `55cf7f0` plus the test only). Scenes from `underwater` onwards were not reached in that run because the original Nether setup killed the player. "After fixes" is the final run on this branch merged with main `d7174a2` (block entity, item bob, wobbler, uuid seeding and root randomness fixes). Values are the maximum fraction of differing pixels over the five frames (fuzz 24). The full log is `build/redteam-final.log`, and the per-frame values are in the `[redteam]` lines.
+
+| Scene | Path | Before fixes (max differing) | After fixes (max differing) |
+|---|---|---|---|
+| `baseline` | command | 0.000% (run 1) | 0.000% |
+| `nether_portal` | command | 0.854% | 0.194% |
+| `end_portal_gateway` | command | 0.515% | 0.000% |
+| `beacon` | key + menu | 1.924% | 0.091% |
+| `conduit` | command | 0.043% | 0.011% |
+| `enchanting_table` | command | 3.089% | 0.764% |
+| `spawners` | command | 1.016% | 0.016% |
+| `campfire_fire` | command | 11.386% | 6.342% |
+| `fluids` | command | 6.635% | 6.723% |
+| `items_orbs_frames` | key + menu | 1.617% | 0.000% |
+| `xp_orbs` | command | 0.197% | 0.019% |
+| `armor_stands` | command | 0.567% | 0.000% |
+| `mobs_land` | key + menu | 0.600% | 0.169% |
+| `mobs_air_water` | command | 0.679% | 0.368% |
+| `third_person_self` | command | 0.237% | 0.018% |
+| `night_sky` | command | 0.000% | 0.000% |
+| `moon_phase` | command | 0.000% | 0.000% |
+| `sunset` | command | 0.025% | 0.025% |
+| `clouds` | command | 0.000% | 0.000% |
+| `rain` | command | 51.541% | 0.000% |
+| `snow` | command | 0.700% | 8.626% |
+| `thunder` | command | 48.951% | 0.000% |
+| `underwater` | command | not run | 0.639% |
+| `nether` | command | not run | 64.198% |
+| `end_sky` | command | not run | 0.031% |
+| `blindness` | command | not run | 0.000% |
+| `darkness` | command | not run | 0.000% |
+| `nausea` | command | not run | 0.000% |
+| `night_vision` | command | not run | 0.000% |
+| `inventory_glint` | command | not run | 98.377% |
+| `f3_debug` | command | not run | 0.047% |
+| `f1_hidden` | command | not run | 0.000% |
+| `low_health_shake` | key + menu | not run | 0.382% |
+| `elytra` | command | not run | 9.418% |
+| `spyglass` | command | not run | 59.973% |
+| `map_item` | command | not run | 0.000% |
+| `compass` | command | not run | 0.438% |
+| `recovery_compass` | command | not run | 0.166% |
+| `clock` | command | not run | 0.000% |
+| `lodestone_compass` | command | not run | 0.791% |
+| `nether_compass_clock` | command | not run | 74.647% |
+| `walking` | command | not run | 7.762% |
+| `id_phase_mobs` | command | not run | 0.169% |
+| `heads_bell_shulker` | command | not run | 0.000% |
+| `lightning_obfuscated` | command | not run | 5.739% |
+| `hotbar_pop` | command | not run | 5.591% |
+
+All small residuals above 0 (≤0.8%) that were inspected are single sub-pixel edges or one changed particle. The rest were not inspected one by one in the time box.
