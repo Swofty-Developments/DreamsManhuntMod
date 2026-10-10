@@ -10,8 +10,14 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.resources.RegistryOps;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Prediction;
+import net.minecraft.world.Container;
+import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.inventory.AbstractContainerMenu;
-import net.minecraft.world.inventory.AbstractCraftingMenu;
+import net.minecraft.world.inventory.AbstractMountInventoryMenu;
+import net.minecraft.world.inventory.MerchantContainer;
+import net.minecraft.world.inventory.PlayerEnderChestContainer;
+import net.minecraft.world.inventory.ResultContainer;
+import net.minecraft.world.inventory.TransientCraftingContainer;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemCooldowns;
 import net.minecraft.world.item.ItemStack;
@@ -47,8 +53,8 @@ final class PlayerRuntime {
 		tag.putBoolean("inventory_menu_open", menu == player.inventoryMenu);
 		tag.store("carried", ItemStack.OPTIONAL_CODEC, ops, menu.getCarried().copy());
 		tag.put("inventory_grid", items(player.inventoryMenu.getInputGridSlots(), ops));
-		if (menu != player.inventoryMenu && menu instanceof AbstractCraftingMenu crafting) {
-			tag.put("menu_grid", items(crafting.getInputGridSlots(), ops));
+		if (menu != player.inventoryMenu) {
+			tag.put("menu_transient", transientItems(menu, ops));
 		}
 		return tag;
 	}
@@ -100,7 +106,7 @@ final class PlayerRuntime {
 		} else {
 			returnToPlayer(player, carried);
 		}
-		for (Tag element : tag.getListOrEmpty("menu_grid")) {
+		for (Tag element : tag.getListOrEmpty("menu_transient")) {
 			if (element instanceof CompoundTag entry) {
 				returnToPlayer(player, entry.read("item", ItemStack.OPTIONAL_CODEC, ops).orElse(ItemStack.EMPTY));
 			}
@@ -111,6 +117,30 @@ final class PlayerRuntime {
 		if (!stack.isEmpty()) {
 			player.getInventory().placeItemBackInInventory(stack, false, Prediction.SERVER_ONLY);
 		}
+	}
+
+	private static ListTag transientItems(AbstractContainerMenu menu, RegistryOps<Tag> ops) {
+		ListTag list = new ListTag();
+		if (menu instanceof AbstractMountInventoryMenu) {
+			return list;
+		}
+		for (Slot slot : menu.slots) {
+			ItemStack stack = slot.getItem();
+			if (stack.isEmpty() || !isTransient(slot.container) || !slot.mayPlace(stack)) {
+				continue;
+			}
+			CompoundTag entry = new CompoundTag();
+			entry.store("item", ItemStack.OPTIONAL_CODEC, ops, stack.copy());
+			list.add(entry);
+		}
+		return list;
+	}
+
+	private static boolean isTransient(Container container) {
+		if (container instanceof PlayerEnderChestContainer || container instanceof ResultContainer) {
+			return false;
+		}
+		return container instanceof SimpleContainer || container instanceof TransientCraftingContainer || container instanceof MerchantContainer;
 	}
 
 	private static ListTag items(List<Slot> slots, RegistryOps<Tag> ops) {

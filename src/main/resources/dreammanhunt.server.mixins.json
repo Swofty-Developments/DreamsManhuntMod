@@ -7,6 +7,7 @@
 		"CooldownInstanceAccessor",
 		"EntityAccessor",
 		"EntityRuntimeMixin",
+		"EntityTypeLoadMixin",
 		"GameRulesAccessor",
 		"ItemCooldownsAccessor",
 		"LegacyRandomSourceAccessor",
@@ -20,6 +21,7 @@
 		"ServerBossEventMixin",
 		"ServerGamePacketListenerImplInvoker",
 		"ServerLevelAccessor",
+		"ServerLevelEntityIdMixin",
 		"ServerTickRateManagerAccessor",
 		"ThreadSafeLegacyRandomSourceAccessor",
 		"TickRateManagerAccessor"
