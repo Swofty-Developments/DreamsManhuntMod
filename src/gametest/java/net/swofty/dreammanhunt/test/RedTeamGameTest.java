@@ -278,8 +278,7 @@ public final class RedTeamGameTest implements FabricClientGameTest {
 			env.tp(0, 1, 0, 0, 0);
 		}));
 		list.add(new Scene("nether", env -> {
-			env.cmd("execute in minecraft:the_nether run fill -8 68 -8 8 80 14 minecraft:glass hollow");
-			env.cmd("execute in minecraft:the_nether run fill -7 69 -7 7 69 13 minecraft:netherrack");
+			buildNetherBox(env);
 			env.cmd("execute in minecraft:the_nether run tp @p 0.5 70 0.5 0 0");
 		}));
 		list.add(new Scene("end_sky", env -> {
@@ -369,8 +368,7 @@ public final class RedTeamGameTest implements FabricClientGameTest {
 			env.tp(0, 0, 0, 0, 10);
 		}));
 		list.add(new Scene("nether_compass_clock", env -> {
-			env.cmd("execute in minecraft:the_nether run fill -8 68 -8 8 80 14 minecraft:glass hollow");
-			env.cmd("execute in minecraft:the_nether run fill -7 69 -7 7 69 13 minecraft:netherrack");
+			buildNetherBox(env);
 			env.cmd("execute in minecraft:the_nether run tp @p 0.5 70 0.5 0 10");
 			env.cmd("item replace entity @p weapon.mainhand with minecraft:compass");
 			env.cmd("item replace entity @p weapon.offhand with minecraft:clock");
@@ -413,6 +411,32 @@ public final class RedTeamGameTest implements FabricClientGameTest {
 			env.tp(0, 0, 0, 0, 10);
 		}));
 		return list;
+	}
+
+	private static void buildNetherBox(Env env) {
+		env.cmd("execute in minecraft:the_nether run forceload add -32 -32 32 32");
+		env.server.waitFor(s -> {
+			net.minecraft.server.level.ServerLevel nether = s.getLevel(net.minecraft.world.level.Level.NETHER);
+			for (int cx = -1; cx <= 1; cx++) {
+				for (int cz = -1; cz <= 1; cz++) {
+					if (nether == null || nether.getChunkSource().getChunkNow(cx, cz) == null) {
+						return false;
+					}
+				}
+			}
+			return true;
+		}, 600);
+		env.cmd("execute in minecraft:the_nether run fill -8 68 -8 8 80 14 minecraft:glass hollow");
+		env.cmd("execute in minecraft:the_nether run fill -7 69 -7 7 69 13 minecraft:netherrack");
+		boolean built = env.server.computeOnServer(s -> {
+			net.minecraft.server.level.ServerLevel nether = s.getLevel(net.minecraft.world.level.Level.NETHER);
+			return nether.getBlockState(new BlockPos(0, 69, 0)).is(net.minecraft.world.level.block.Blocks.NETHERRACK)
+				&& nether.getBlockState(new BlockPos(0, 80, 0)).is(net.minecraft.world.level.block.Blocks.GLASS)
+				&& nether.getBlockState(new BlockPos(0, 70, 0)).isAir();
+		});
+		if (!built) {
+			throw new AssertionError("nether box was not built");
+		}
 	}
 
 	private void runScene(ClientGameTestContext context, TestServerContext server, Scene scene) {
@@ -588,30 +612,41 @@ public final class RedTeamGameTest implements FabricClientGameTest {
 			if (hud != target) {
 				throw new AssertionError(prefix + ": ran past hud tick " + target + " (at " + hud + ")");
 			}
-			long fontSeed = context.computeOnClient(RedTeamGameTest::fontSeed);
-			if (offset == 0 && net.swofty.dreammanhunt.randomroot.SeedStreams.DEBUG) {
+			if (net.swofty.dreammanhunt.randomroot.SeedStreams.DEBUG) {
 				List<String> used = context.computeOnClient(mc -> new ArrayList<>(net.swofty.dreammanhunt.randomroot.SeedStreams.CLIENT.debug));
-				System.out.printf("[redteam-debug] %s stream draws before t0: %d%n", prefix, used.size());
+				String pos = context.computeOnClient(mc -> String.format(Locale.ROOT, "%.5f %.5f %.5f / %.5f %.5f %.5f", mc.player.getX(), mc.player.getY(), mc.player.getZ(),
+					mc.gameRenderer.mainCamera().position().x, mc.gameRenderer.mainCamera().position().y, mc.gameRenderer.mainCamera().position().z));
+				String rngs = context.computeOnClient(mc -> "level " + seedOf(net.minecraft.world.level.Level.class, "random", mc.level)
+					+ " particles " + seedOf(net.minecraft.client.particle.ParticleEngine.class, "random", mc.particleEngine)
+					+ " count " + mc.particleEngine.countParticles()
+					+ " clientGameTime " + mc.level.getGameTime() + " rain " + mc.level.getRainLevel(1.0F)
+					+ " health " + mc.player.getHealth() + " dim " + mc.level.dimension().identifier());
+				System.out.printf("[redteam-debug] %s t%d stream draws %d, player/camera %s, rng %s%n", prefix, offset, used.size(), pos, rngs);
 				for (int i = 0; i < used.size(); i++) {
-					System.out.printf("[redteam-debug] %s draw %d %s%n", prefix, i, used.get(i));
+					System.out.printf("[redteam-debug] %s t%d draw %d %s%n", prefix, offset, i, used.get(i));
 				}
 			}
 			shots.add(context.takeScreenshot(prefix + "-t" + offset));
-			System.out.printf("[redteam-debug] %s t%d font seed %d -> %d, partial tick %.4f%n", prefix, offset, fontSeed, context.computeOnClient(RedTeamGameTest::fontSeed),
-				context.computeOnClient(mc -> mc.getDeltaTracker().getGameTimeDeltaPartialTick(true)));
 		}
 	}
 
-	private static long fontSeed(Minecraft mc) {
+	private static String seedOf(Class<?> owner, String name, Object target) {
 		try {
-			java.lang.reflect.Field field = net.minecraft.client.gui.Font.class.getDeclaredField("random");
+			java.lang.reflect.Field field = owner.getDeclaredField(name);
 			field.setAccessible(true);
-			Object random = field.get(mc.font);
-			java.lang.reflect.Field seed = net.minecraft.world.level.levelgen.LegacyRandomSource.class.getDeclaredField("seed");
-			seed.setAccessible(true);
-			return ((java.util.concurrent.atomic.AtomicLong) seed.get(random)).get();
-		} catch (ReflectiveOperationException | ClassCastException e) {
-			return -1;
+			Object random = field.get(target);
+			for (Class<?> type = random.getClass(); type != null; type = type.getSuperclass()) {
+				for (java.lang.reflect.Field f : type.getDeclaredFields()) {
+					if (f.getName().equals("seed")) {
+						f.setAccessible(true);
+						Object v = f.get(random);
+						return String.valueOf(v instanceof java.util.concurrent.atomic.AtomicLong a ? a.get() : v);
+					}
+				}
+			}
+			return random.getClass().getSimpleName();
+		} catch (ReflectiveOperationException e) {
+			return "?";
 		}
 	}
 

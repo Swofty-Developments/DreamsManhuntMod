@@ -14,6 +14,10 @@ import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.levelgen.LegacyRandomSource;
 import org.jspecify.annotations.Nullable;
@@ -25,6 +29,7 @@ public final class SeedStreams {
 	private static final Map<Class<?>, List<Field>> FIELDS = new ConcurrentHashMap<>();
 	private static volatile @Nullable Thread clientThread;
 	private static volatile @Nullable Thread serverThread;
+	private static volatile @Nullable MinecraftServer server;
 
 	private SeedStreams() {
 	}
@@ -35,6 +40,10 @@ public final class SeedStreams {
 
 	public static void setServerThread(Thread thread) {
 		serverThread = thread;
+	}
+
+	public static void setServer(MinecraftServer current) {
+		server = current;
 	}
 
 	public static @Nullable Stream current() {
@@ -95,7 +104,16 @@ public final class SeedStreams {
 	}
 
 	public static void captureServer(CompoundTag tag) {
-		tag.put("randomroot", SERVER.capture());
+		CompoundTag root = SERVER.capture();
+		MinecraftServer current = server;
+		if (current != null) {
+			ListTag tickers = new ListTag();
+			for (ServerLevel level : current.getAllLevels()) {
+				tickers.add(TickerOrder.capture(level));
+			}
+			root.put("tickers", tickers);
+		}
+		tag.put("randomroot", root);
 	}
 
 	public static void applyServer(CompoundTag tag) {
@@ -103,8 +121,20 @@ public final class SeedStreams {
 	}
 
 	public static void onServerTickStart(boolean frozen) {
-		if (!frozen) {
-			SERVER.applyScheduled();
+		if (frozen) {
+			return;
+		}
+		CompoundTag scheduled = SERVER.scheduled;
+		SERVER.applyScheduled();
+		MinecraftServer current = server;
+		if (scheduled != null && current != null) {
+			for (Tag raw : scheduled.getListOrEmpty("tickers")) {
+				if (raw instanceof CompoundTag tickers) {
+					for (ServerLevel level : current.getAllLevels()) {
+						TickerOrder.apply(level, tickers);
+					}
+				}
+			}
 		}
 	}
 
@@ -127,6 +157,10 @@ public final class SeedStreams {
 		public final List<String> debug = Collections.synchronizedList(new ArrayList<>());
 
 		private Stream() {
+		}
+
+		public long salt() {
+			return this.salt;
 		}
 
 		@Nullable Long next() {
@@ -197,7 +231,7 @@ public final class SeedStreams {
 			}
 		}
 
-		private static long mix(long z) {
+		public static long mix(long z) {
 			z = (z ^ z >>> 30) * 0xBF58476D1CE4E5B9L;
 			z = (z ^ z >>> 27) * 0x94D049BB133111EBL;
 			return z ^ z >>> 31;

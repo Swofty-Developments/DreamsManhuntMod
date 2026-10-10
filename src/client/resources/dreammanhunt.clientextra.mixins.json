@@ -6,6 +6,7 @@
 		"AddEntitySeedMixin",
 		"ClientLevelAnimateMixin",
 		"FontAccessor",
+		"GlyphSeedMixin",
 		"ItemEntityAccessor",
 		"MinecraftThreadMixin",
 		"NeedleDirectionHelperMixin",

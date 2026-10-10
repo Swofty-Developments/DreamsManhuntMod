@@ -157,14 +157,55 @@ When the save happens with the inventory open (`inventory_glint`), the resumed g
 
 `spyglass` saves while the spyglass is in use, with the use key still held. After the restore the scope overlay is gone and the item is lowered (60% differs). The client re-applies `startUsingItem`, but the restored server player is not using the item and stops the use. The use key is held through the restore and is never re-pressed, so vanilla never restarts it. The same applies to bows, eating, shields and tridents.
 
-### 17. Remaining residuals not explained in the time box
+### 17. Server and client tick phase shifted by one tick after some restores (b) — fixed (coordinator, `e47dc0c`)
 
-- `snow`: rain columns diverge from +16 ticks (8.6%), the same pattern as finding 4 before the engine fix. This scene sets the weather after a `fillbiome`. Possibly a weather-transition edge case.
-- `campfire_fire`: smoke diverges from +10 ticks (6.3%). It was 0.000% in the run before the latest main merge (run 7, same red-team code), so something in that merge shifts the client particle stream. Use `REDTEAM_SEEDDEBUG=1` to list the call site of every stream draw in both timelines.
-- `enchanting_table` (0.76%): page flips use the static `EnchantingTableBlockEntity.RANDOM`. In singleplayer both the integrated server thread and the client thread tick enchanting tables, so they race on that one generator. This cannot be made deterministic without splitting it per side. On a dedicated server only the client draws from it.
-- `lightning_obfuscated`: both bolts are pixel-identical (seeded from the restored UUID). The obfuscated glyphs still differ. The per-frame glyph seed mixes in the frame's partial tick, and the harness does not pin it the same way for both timelines.
-- `fluids` (6.7%) and `walking` (7.8%): finding 8 (player moving at the save).
-- `hotbar_pop` (5.6%): the obfuscated title from the previous scene is still on screen, so it shows the glyph residual above.
+Location: `server/coordinator/SavestateCoordinator.afterTick` (main `42ef0aa`).
+
+Once the barrier also waited for chunk delivery, it could complete from the end-of-tick hook (`tickChildren` TAIL). There it sent `RestoreResume` one level tick earlier, relative to the server, than both the ready-packet path (head of the tick, right after `processQueuedPackets`) and the save. When that happened, the resumed client ran a tick ahead of the server.
+
+Every server-driven value then arrived a tick late. Client game time (sky, clouds, rain column scroll), rain levels and rain splash counts all differed. The debug trace showed `clientGameTime 374` (uncut) vs `373` (restored) with every RNG state identical.
+
+This caused the flaky `snow`/`rain` residual: whichever scene's restore had to wait for chunks showed it, and it was 8.6% in the final run. Fix: the completion check moved from `afterTick` to a new `beforeTick` at the head of `tickServer`.
+
+### 18. Block entity ticker order changes after a restore (b) — fixed (`10ab7ad`)
+
+Location: `world/level/Level.java:110-112` (`blockEntityTickers`, `pendingBlockEntityTickers`).
+
+A restore re-adds block entities in chunk-packet (client) or chunk-load (server) order. Tickers that share the level RNG then draw from it in a different order. Campfire smoke (`CampfireBlockEntity.particleTick` uses `level.random`), spawners and vaults all diverge, while the RNG states sampled between ticks stay identical.
+
+This caused the `campfire_fire` regression after the main merge (6.3-9.8%). Fix: `randomroot.TickerOrder` captures the ticker order by position and re-sorts the lists, on the client at Resume and on the server at the first unfrozen tick.
+
+### 19. §k glyphs depended on frame count and render path (b) — fixed (`2f5cd8f`)
+
+Fabric's screenshot renders through `GameRenderer.extract/render` with a fixed `DeltaTracker`, not through `Minecraft.renderFrame`, so the per-frame reseed was skipped there. Real play has the same problem whenever frame counts per tick differ.
+
+`GlyphSeedMixin` now reseeds `Font.random` at the head of `GameRenderer.extract` from `mix(session salt ^ mix(clientTickCount, partial tick bits))`. Glyphs still change every frame, as in vanilla, but they are a pure function of game time (tick + partial tick), like everything else on screen. `lightning_obfuscated` went from 5.7% to 0.000%.
+
+### 20. Spawner scene diverged through spawned pigs (b) — closed by ticker order and the engine round 4
+
+`spawners` spawns pigs (`RequiredPlayerRange 16`). Before the ticker-order fix their positions and AI differed (21% at +26 ticks). After the ticker-order fix and main `5d0c035` (spawner display mobs), it is 0.4%: sub-pixel flame and pig edges.
+
+### 21. Server beacon runtime state is not restored (b) — handed off to engine
+
+Location: `world/level/block/entity/BeaconBlockEntity.java:72-73,121-183,321-334`.
+
+On the server, `levels`, `lastCheckY` and the beam scan lists are not read back from NBT. The rebuilt beacon re-scans from scratch and recomputes `levels` on the next `gameTime % 80 == 0`. Activation (`BEACON_ACTIVATE` sound, the `CONSTRUCT_BEACON` advancement with its chat line and toast) therefore fires at a different tick than in the uncut timeline.
+
+Evidence: `beacon` (key + menu path) is 3.1% at +10 ticks, from the "Bring Home the Beacon" chat line appearing earlier in the restored timeline. The toast carries over into the next scene's frame (`conduit` 1.2%, toast only). The client side is restored (finding 2). The server needs the same: capture `levels`, `lastCheckY`, `beamSections` and `checkingBeamSections` per beacon and put them back after the level rebuild.
+
+### 22. Static client generators created off the client thread (b) — fixed (`c98461c`)
+
+`EnchantingTableBlockEntity.RANDOM` (page flips) and `SpellParticle.RANDOM` are class-initialised by whichever thread touches the class first, often the integrated server thread. The client generator registry therefore never saw them. Both are now restored explicitly. `enchanting_table` went from 0.76% to 0.000%.
+
+### 23. Compass and clock random spin in the Nether still differs (b) — open, handed off to client-state
+
+`nether_compass_clock` is 1.3-1.8% and `recovery_compass` (no death location, so it spins) is 0.4-1.5%. Only the needle pixels differ. The spin comes from `CompassAngleState.random` / `Time.randomSource` through the shared no-target wobbler (`client/renderer/item/properties/numeric/CompassAngleState.java:49-55`, `Time.java:22-36`). Those RNGs are created while models bake on worker threads, so the registry misses them.
+
+Restoring their seeds together with the wobblers (commit `0c2b76f`, reverted in `b3bf57a`) did not change the result and made `recovery_compass` worse. The update must therefore also run at a different moment relative to `level.getGameTime()` in the two timelines. Likely causes: frames rendered during the barrier with a server-set game time, or the restore's two applies. A per-frame trace of `noTargetWobbler.lastUpdateTick` against `gameTime` in both timelines should show it.
+
+### 24. Nether scene setup (test bug) — fixed (`bd1c8cc`)
+
+The box was filled before the Nether chunks were loaded ("That position is not loaded"), so both timelines died in lava. The scene now force-loads, waits for the chunks and checks the box exists. On main `5d0c035` (engine round 4), `nether` is 0.000% at every frame, with player position, camera, dimension and health identical per frame (20.0 in both). No lower-health or early-death difference remains.
 
 ## Randomness at the root
 
@@ -251,3 +292,56 @@ This closes finding 11 at the root: the bolt shape comes from the UUID that the 
 | `hotbar_pop` | command | not run | 5.591% |
 
 All small residuals above 0 (≤0.8%) that were inspected are single sub-pixel edges or one changed particle. The rest were not inspected one by one in the time box.
+
+### Follow-up runs
+
+"Follow-up full run" is this branch with findings 17-19 and 22 fixed, before merging main `5d0c035`. The Nether scenes in it still used the broken setup. "Targeted run" is on main `5d0c035` with the fixed Nether setup. The logs are `build/redteam-final2.log` and the `[redteam]` lines.
+
+| Scene | Previous report | Follow-up full run | Targeted run on main `5d0c035` |
+|---|---|---|---|
+| `baseline` | 0.000% | 0.000% | — |
+| `nether_portal` | 0.194% | 0.000% | — |
+| `end_portal_gateway` | 0.000% | 0.000% | — |
+| `beacon` | 0.091% | 3.118% | 0.292% |
+| `conduit` | 0.011% | 1.184% | — |
+| `enchanting_table` | 0.764% | 0.000% | — |
+| `spawners` | 0.016% | 2.664% | 0.413% |
+| `campfire_fire` | 6.342% | 0.000% | — |
+| `fluids` | 6.723% | 7.083% | — |
+| `items_orbs_frames` | 0.000% | 0.169% | — |
+| `xp_orbs` | 0.019% | 0.019% | — |
+| `armor_stands` | 0.000% | 0.000% | — |
+| `mobs_land` | 0.169% | 0.194% | — |
+| `mobs_air_water` | 0.368% | 0.341% | — |
+| `third_person_self` | 0.018% | 0.018% | — |
+| `night_sky` | 0.000% | 0.000% | — |
+| `moon_phase` | 0.000% | 0.000% | — |
+| `sunset` | 0.025% | 0.025% | — |
+| `clouds` | 0.000% | 0.000% | — |
+| `rain` | 0.000% | 0.000% | — |
+| `snow` | 8.626% | 0.000% | — |
+| `thunder` | 0.000% | 0.000% | — |
+| `underwater` | 0.639% | 0.477% | — |
+| `nether` | 64.198% | 45.699% | 0.000% |
+| `end_sky` | 0.031% | 0.268% | — |
+| `blindness` | 0.000% | 0.000% | — |
+| `darkness` | 0.000% | 0.000% | — |
+| `nausea` | 0.000% | 0.000% | — |
+| `night_vision` | 0.000% | 0.000% | — |
+| `inventory_glint` | 98.377% | 98.416% | — |
+| `f3_debug` | 0.047% | 0.038% | — |
+| `f1_hidden` | 0.000% | 0.000% | — |
+| `low_health_shake` | 0.382% | 0.382% | — |
+| `elytra` | 9.418% | 21.867% | — |
+| `spyglass` | 59.973% | 59.973% | — |
+| `map_item` | 0.000% | 0.000% | — |
+| `compass` | 0.438% | 0.438% | 0.438% |
+| `recovery_compass` | 0.166% | 0.408% | 1.556% |
+| `clock` | 0.000% | 0.000% | 0.000% |
+| `lodestone_compass` | 0.791% | 0.774% | 0.699% |
+| `nether_compass_clock` | 74.647% | 60.820% | 1.780% |
+| `walking` | 7.762% | 7.762% | — |
+| `id_phase_mobs` | 0.169% | 0.000% | — |
+| `heads_bell_shulker` | 0.000% | 0.000% | — |
+| `lightning_obfuscated` | 5.739% | 0.000% | — |
+| `hotbar_pop` | 5.591% | 0.000% | — |

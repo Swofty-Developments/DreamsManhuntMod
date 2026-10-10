@@ -29,18 +29,20 @@ A Fabric mod for Minecraft 26.3 that savestates the entire game, create your ver
 
 ### HUD
 
+- Hunger-bar jolts
 - Low-health heart shake
+- Regeneration heart wave
 - Heart blink, ghost hearts and the damage flash
 - Air bubble wobble
 - Action bar text, titles and subtitles, with their fade timing
 - Chat lines, with their fade-out timing and scroll position
 - Held-item name popup
 - Item cooldown overlays, including ender pearls
-- Hunger-bar jolts
 - Boss bars
 - Toasts in flight, including advancement and recipe toasts
 - Vignette, spyglass zoom and autosave indicator
 - F1 hidden HUD and F5 perspective
+- Screens open at the save, reopened with their state
 
 ### Pseudorandom generators
 
@@ -50,11 +52,15 @@ A Fabric mod for Minecraft 26.3 that savestates the entire game, create your ver
 - Ambient particles: drips, portal swirl, end portal, campfire smoke, fire
 - Each particle's own generator
 - Music picker and sound variant generators
+- Lightning bolt shapes and `§k` obfuscated text
+- The order block entities draw from shared generators
 
 ### Player view
 
 - View bobbing, walk animation, hand swing, hand heights and equip progress
 - Item use progress and attack strength
+- Velocity and movement state when walking, sprinting, falling or swimming at the save
+- Held keys and mouse buttons resynced from physical input on resume
 - FOV transition, eye height and smooth camera
 - Sprint, portal and nausea effects, water vision
 - Darkness, blindness and night vision fades
@@ -87,12 +93,17 @@ A Fabric mod for Minecraft 26.3 that savestates the entire game, create your ver
 - Scoreboards, teams and objectives
 - Raids, maps, command storage and random sequences
 - Phantom, patrol and cat spawner timers
-- Per-entity tick count, hurt invulnerability, attack cooldown, jump delay, ambient sound timer and XP pickup delay
+- Rain and thunder transition levels in every dimension
+- Entity ids and the entity id counter
+- Per-entity tick count, hurt invulnerability, damage window, attack cooldown, jump delay, ambient sound timer and XP pickup delay
 
 ### Players
 
 - Position, dimension and rotation
+- Velocity, fall distance, fire ticks and air
 - Inventory, ender chest, selected slot, cursor item and 2x2 crafting grid
+- Items in open menus: crafting table, anvil, smithing table, grindstone, stonecutter, loom, enchanting table, cartography table, beacon and trading
+- Items in use: spyglasses, bows, crossbows, food, shields
 - Health, food, saturation and exhaustion
 - XP, effects, spawn point, abilities and game mode
 - Advancements with criteria progress, recipes and statistics
@@ -190,6 +201,8 @@ Results are in `build/multiclient/run-*/harness.log`.
 - [Design and protocol](docs/DESIGN.md)
 - [Client state inventory](docs/client-state-inventory.md)
 - [Server state inventory](docs/server-state-inventory.md)
+- [Red team findings](docs/redteam-findings.md)
+- [Tick forensics](docs/forensics.md)
 
 ## Credits
 
