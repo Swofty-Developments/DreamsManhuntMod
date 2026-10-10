@@ -88,6 +88,9 @@ public final class ClientStateManager {
 		if (this.restoring != null) {
 			try {
 				ClientSnapshot.applyEarly(minecraft, this.restoring);
+				if (minecraft.level != null && minecraft.player != null) {
+					ClientSnapshot.applyBarrierTiming(minecraft, this.restoring);
+				}
 			} catch (Throwable t) {
 				LOGGER.error("Failed to restore settings for {}", stateId, t);
 			}
@@ -118,7 +121,7 @@ public final class ClientStateManager {
 	}
 
 	public float barrierPartialTick() {
-		if (this.phase != Phase.APPLIED || this.restoring == null) {
+		if (this.phase == Phase.IDLE || this.restoring == null) {
 			return Float.NaN;
 		}
 		return this.restoring.getCompoundOrEmpty("timing").getFloatOr("deltaTickResidual", Float.NaN);
