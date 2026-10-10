@@ -84,6 +84,9 @@ public final class EngineGameTest implements FabricClientGameTest {
 		server.runCommand("tp @a " + (playerPos.getX() + 0.5) + " " + playerPos.getY() + " " + (playerPos.getZ() + 0.5) + " 0 15");
 		server.runCommand(fill(playerPos.offset(-3, 0, 5), playerPos.offset(3, 3, 5), "minecraft:gold_block"));
 		server.runCommand(setblock(diamondPos, "minecraft:diamond_block"));
+		BlockPos beaconPos = playerPos.offset(6, 1, 1);
+		server.runCommand(fill(playerPos.offset(5, 0, 0), playerPos.offset(7, 0, 2), "minecraft:iron_block"));
+		server.runCommand(setblock(beaconPos, "minecraft:beacon"));
 		BlockPos spawnerPos = playerPos.offset(-3, 0, 4);
 		server.runCommand(setblock(spawnerPos, "minecraft:spawner{SpawnData:{entity:{id:\"minecraft:pig\"}}}"));
 		server.runCommand("summon minecraft:pig " + pigPos.getX() + " " + pigPos.getY() + " " + pigPos.getZ() + " {CustomName:\"" + SAVED_PIG + "\",NoAI:1b,Silent:1b}");
@@ -122,6 +125,7 @@ public final class EngineGameTest implements FabricClientGameTest {
 		String id = UUID.randomUUID().toString();
 		float[] savedCooldown = new float[1];
 		float[] savedWeather = new float[4];
+		String[] savedBeacon = new String[1];
 		long[] savedRuntime = new long[7];
 		long saveMillis = server.computeOnServer(s -> {
 			long start = System.nanoTime();
@@ -144,6 +148,7 @@ public final class EngineGameTest implements FabricClientGameTest {
 			savedWeather[1] = overworldAccess.dreammanhunt$getRainLevel();
 			savedWeather[2] = overworldAccess.dreammanhunt$getOThunderLevel();
 			savedWeather[3] = overworldAccess.dreammanhunt$getThunderLevel();
+			savedBeacon[0] = beaconState(s.overworld(), beaconPos);
 			savedCooldown[0] = firstPlayer(s).getCooldowns().getCooldownPercent(new ItemStack(Items.ENDER_PEARL), 0.0F);
 			return elapsed;
 		});
@@ -202,6 +207,8 @@ public final class EngineGameTest implements FabricClientGameTest {
 			check(failures, pig != null && pig.tickCount == savedRuntime[2], "pig tick count restored");
 			check(failures, pig != null && pig.getRandom().nextLong() == savedRuntime[3], "pig random restored");
 			check(failures, ((LevelAccessor) s.overworld()).dreammanhunt$getSoundSeedGenerator().nextLong() == savedRuntime[4], "overworld sound seed restored");
+			String beacon = beaconState(s.overworld(), beaconPos);
+			check(failures, beacon.equals(savedBeacon[0]), "beacon scan state restored, got " + beacon + " saved " + savedBeacon[0]);
 			ServerPlayer restored = firstPlayer(s);
 			float cooldown = restored.getCooldowns().getCooldownPercent(new ItemStack(Items.ENDER_PEARL), 0.0F);
 			check(failures, cooldown == savedCooldown[0] && cooldown > 0.0F, "server pearl cooldown restored exactly, got " + cooldown + " saved " + savedCooldown[0]);
@@ -497,6 +504,21 @@ public final class EngineGameTest implements FabricClientGameTest {
 		});
 		server.runCommand("execute in minecraft:the_nether run forceload remove all");
 		server.runOnServer(s -> SavestateEngine.get(s).delete(id));
+	}
+
+	private static String beaconState(ServerLevel level, BlockPos pos) {
+		if (!(level.getBlockEntity(pos) instanceof net.minecraft.world.level.block.entity.BeaconBlockEntity beacon)) {
+			return "missing";
+		}
+		net.swofty.dreammanhunt.mixin.server.BeaconBlockEntityAccessor accessor = (net.swofty.dreammanhunt.mixin.server.BeaconBlockEntityAccessor) beacon;
+		StringBuilder state = new StringBuilder("levels=" + accessor.dreammanhunt$getLevels() + " lastCheckY=" + accessor.dreammanhunt$getLastCheckY() + " shared=" + (accessor.dreammanhunt$getBeamSections() == accessor.dreammanhunt$getCheckingBeamSections()));
+		for (net.minecraft.world.level.block.entity.BeaconBeamOwner.Section section : accessor.dreammanhunt$getBeamSections()) {
+			state.append(" beam:").append(section.getColor()).append('x').append(section.getHeight());
+		}
+		for (net.minecraft.world.level.block.entity.BeaconBeamOwner.Section section : accessor.dreammanhunt$getCheckingBeamSections()) {
+			state.append(" checking:").append(section.getColor()).append('x').append(section.getHeight());
+		}
+		return state.toString();
 	}
 
 	private static Object[] playerState(ServerPlayer player) {
