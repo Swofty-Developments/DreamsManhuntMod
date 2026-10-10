@@ -97,6 +97,7 @@ public final class EngineGameTest implements FabricClientGameTest {
 		connection.waitForChunksRender();
 
 		String id = UUID.randomUUID().toString();
+		long[] savedRuntime = new long[4];
 		long saveMillis = server.computeOnServer(s -> {
 			long start = System.nanoTime();
 			try {
@@ -104,7 +105,13 @@ public final class EngineGameTest implements FabricClientGameTest {
 			} catch (SavestateException e) {
 				throw new RuntimeException(e);
 			}
-			return (System.nanoTime() - start) / 1_000_000L;
+			long elapsed = (System.nanoTime() - start) / 1_000_000L;
+			savedRuntime[0] = s.getTickCount();
+			savedRuntime[1] = s.overworld().getRandom().nextLong();
+			Entity pig = findNamed(s.overworld().getAllEntities(), SAVED_PIG);
+			savedRuntime[2] = pig == null ? -1 : pig.tickCount;
+			savedRuntime[3] = pig == null ? -1 : pig.getRandom().nextLong();
+			return elapsed;
 		});
 		System.out.println("[EngineGameTest] " + label + " save took " + saveMillis + " ms");
 		context.takeScreenshot("engine-" + label + "-after-save");
@@ -137,6 +144,7 @@ public final class EngineGameTest implements FabricClientGameTest {
 		context.waitTicks(40);
 		context.takeScreenshot("engine-" + label + "-mutated");
 
+		List<String> failures = new ArrayList<>();
 		long restoreMillis = server.computeOnServer(s -> {
 			long start = System.nanoTime();
 			try {
@@ -144,7 +152,13 @@ public final class EngineGameTest implements FabricClientGameTest {
 			} catch (SavestateException e) {
 				throw new RuntimeException(e);
 			}
-			return (System.nanoTime() - start) / 1_000_000L;
+			long elapsed = (System.nanoTime() - start) / 1_000_000L;
+			check(failures, s.getTickCount() == savedRuntime[0], "server tick count restored, got " + s.getTickCount() + " saved " + savedRuntime[0]);
+			check(failures, s.overworld().getRandom().nextLong() == savedRuntime[1], "overworld random restored");
+			Entity pig = findNamed(s.overworld().getAllEntities(), SAVED_PIG);
+			check(failures, pig != null && pig.tickCount == savedRuntime[2], "pig tick count restored");
+			check(failures, pig != null && pig.getRandom().nextLong() == savedRuntime[3], "pig random restored");
+			return elapsed;
 		});
 		System.out.println("[EngineGameTest] " + label + " restore took " + restoreMillis + " ms");
 
@@ -153,7 +167,6 @@ public final class EngineGameTest implements FabricClientGameTest {
 		context.waitTicks(5);
 		context.takeScreenshot("engine-" + label + "-after-restore");
 
-		List<String> failures = new ArrayList<>();
 		server.runOnServer(s -> {
 			ServerLevel level = s.overworld();
 			ServerPlayer player = firstPlayer(s);
@@ -255,6 +268,16 @@ public final class EngineGameTest implements FabricClientGameTest {
 			}
 		}
 		return total;
+	}
+
+	private static Entity findNamed(Iterable<? extends Entity> entities, String name) {
+		for (Entity entity : entities) {
+			Component customName = entity.getCustomName();
+			if (customName != null && customName.getString().equals(name)) {
+				return entity;
+			}
+		}
+		return null;
 	}
 
 	private static boolean isDone(MinecraftServer server, ServerPlayer player, Identifier id) {
