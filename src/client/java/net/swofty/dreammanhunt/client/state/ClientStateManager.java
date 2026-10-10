@@ -87,6 +87,9 @@ public final class ClientStateManager {
 		if (this.restoring != null) {
 			try {
 				ClientSnapshot.applyEarly(minecraft, this.restoring);
+				if (minecraft.level != null && minecraft.player != null) {
+					ClientSnapshot.applyBarrierTiming(minecraft, this.restoring);
+				}
 			} catch (Throwable t) {
 				LOGGER.error("Failed to restore settings for {}", stateId, t);
 			}
@@ -114,6 +117,13 @@ public final class ClientStateManager {
 
 	public boolean isRestoring() {
 		return this.phase != Phase.IDLE;
+	}
+
+	public float barrierPartialTick() {
+		if (this.phase == Phase.IDLE || this.restoring == null) {
+			return Float.NaN;
+		}
+		return this.restoring.getCompoundOrEmpty("timing").getFloatOr("deltaTickResidual", Float.NaN);
 	}
 
 	public @Nullable CompoundTag snapshot(String stateId) {
@@ -197,6 +207,7 @@ public final class ClientStateManager {
 		}
 		try {
 			ClientSnapshot.apply(minecraft, this.restoring);
+			ClientSnapshot.applyBarrierTiming(minecraft, this.restoring);
 		} catch (Throwable t) {
 			LOGGER.error("Failed to apply client state {}", this.restoringId, t);
 		}
@@ -216,6 +227,11 @@ public final class ClientStateManager {
 		}
 		if (!resumed) {
 			VisualClock.unfreeze();
+		}
+		try {
+			PhysicalKeys.sync(minecraft);
+		} catch (Throwable t) {
+			LOGGER.warn("Could not resync held keys after restore {}", this.restoringId, t);
 		}
 		this.reset();
 	}

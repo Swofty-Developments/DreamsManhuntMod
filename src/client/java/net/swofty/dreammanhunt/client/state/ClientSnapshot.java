@@ -74,6 +74,8 @@ public final class ClientSnapshot {
 		root.put("cooldowns", CooldownState.capture(minecraft.player));
 		root.put("fades", FadeState.capture(minecraft));
 		root.put("destroyProgress", captureDestroyProgress(minecraft.level));
+		root.put("screen", ScreenState.capture(minecraft));
+		root.put("needles", NeedleState.capture(minecraft));
 		root.put("audio", net.swofty.dreammanhunt.client.state.audio.AudioState.capture(minecraft));
 		net.swofty.dreammanhunt.client.state.extra.ExtraState.capture(minecraft, root);
 		LiveStates.Live live = LiveStates.create(root);
@@ -115,16 +117,34 @@ public final class ClientSnapshot {
 		camera.attributeProbe().tick(minecraft.level, camera.position());
 		minecraft.level.environmentAttributes().invalidateTickCache();
 		net.swofty.dreammanhunt.client.state.audio.AudioState.apply(minecraft, root.getCompoundOrEmpty("audio"));
+		ScreenState.apply(minecraft, root.getCompoundOrEmpty("screen"));
+		NeedleState.apply(minecraft, root.getCompoundOrEmpty("needles"));
 	}
 
 	public static void resume(Minecraft minecraft, CompoundTag root) {
 		apply(minecraft, root);
+		PlayerMotionState.syncServer(minecraft.player);
 		applyTextures(minecraft, root.getCompoundOrEmpty("textures"));
 		for (KeyMapping key : minecraft.options.keyMappings) {
 			while (key.consumeClick()) {
 			}
 		}
 		applyTiming(minecraft, root.getCompoundOrEmpty("timing"));
+	}
+
+	public static void applyBarrierTiming(Minecraft minecraft, CompoundTag root) {
+		LiveStates.Live live = LiveStates.get(root);
+		if (live != null && live.overlays != null) {
+			OverlayState.apply(minecraft, live.overlays);
+		} else {
+			minecraft.gui.toastManager().clear();
+		}
+		applyTextures(minecraft, root.getCompoundOrEmpty("textures"));
+		CompoundTag timing = root.getCompoundOrEmpty("timing");
+		applyTiming(minecraft, timing);
+		if (timing.contains("visualNanos")) {
+			VisualClock.freezeAt(timing.getLongOr("visualNanos", VisualClock.nanos()));
+		}
 	}
 
 	public static CompoundTag counters(Minecraft minecraft) {
@@ -268,6 +288,13 @@ public final class ClientSnapshot {
 				state.dm$setSubFrame(frames[i * 2 + 1]);
 				state.dm$setDirty(true);
 			}
+			try {
+				java.lang.reflect.Method upload = TextureAtlas.class.getDeclaredMethod("uploadAnimationFrames");
+				upload.setAccessible(true);
+				upload.invoke(atlas);
+			} catch (ReflectiveOperationException e) {
+				throw new IllegalStateException(e);
+			}
 		}
 	}
 
@@ -392,6 +419,7 @@ public final class ClientSnapshot {
 		tag.putFloat("activationOffX", activation.dm$getOffX());
 		tag.putFloat("activationOffY", activation.dm$getOffY());
 		tag.put("elytra", EntityAnimations.captureElytra(player));
+		tag.put("motion", PlayerMotionState.capture(player));
 		return tag;
 	}
 
@@ -404,10 +432,12 @@ public final class ClientSnapshot {
 		double x = tag.getDoubleOr("x", player.getX());
 		double y = tag.getDoubleOr("y", player.getY());
 		double z = tag.getDoubleOr("z", player.getZ());
-		boolean samePlace = Math.abs(player.getX() - x) < SAME_POSITION_EPSILON
-			&& Math.abs(player.getY() - y) < SAME_POSITION_EPSILON
-			&& Math.abs(player.getZ() - z) < SAME_POSITION_EPSILON;
-		if (samePlace) {
+		CompoundTag motion = tag.getCompoundOrEmpty("motion");
+		PlayerMotionState.apply(player, motion);
+		boolean samePlace = motion.isEmpty()
+			? Math.abs(player.getX() - x) < SAME_POSITION_EPSILON && Math.abs(player.getY() - y) < SAME_POSITION_EPSILON && Math.abs(player.getZ() - z) < SAME_POSITION_EPSILON
+			: player.level().dimension().identifier().toString().equals(motion.getStringOr("dimension", ""));
+		if (samePlace && motion.isEmpty()) {
 			player.setPosRaw(x, y, z);
 			player.xo = tag.getDoubleOr("xo", x);
 			player.yo = tag.getDoubleOr("yo", y);
