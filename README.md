@@ -42,7 +42,7 @@ A Fabric mod for Minecraft 26.3 that savestates the entire game, create your ver
 - Toasts in flight, including advancement and recipe toasts
 - Vignette, spyglass zoom and autosave indicator
 - F1 hidden HUD and F5 perspective
-- Screens open at the save, reopened with their state
+- Inventory, recipe book, creative tab, chat box and pause screens open at the save, reopened with their state
 
 ### Pseudorandom generators
 
