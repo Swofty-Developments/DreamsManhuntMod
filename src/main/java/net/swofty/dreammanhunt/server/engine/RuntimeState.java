@@ -49,6 +49,7 @@ final class RuntimeState {
 	static RuntimeState capture(MinecraftServer server) {
 		CompoundTag tag = new CompoundTag();
 		tag.putInt("server_tick_count", ((MinecraftServerAccessor) server).dreammanhunt$getTickCount());
+		tag.putInt("entity_counter", EntityIds.counter());
 
 		ServerTickRateManager tickRate = server.tickRateManager();
 		ServerTickRateManagerAccessor sprint = (ServerTickRateManagerAccessor) tickRate;
@@ -85,6 +86,10 @@ final class RuntimeState {
 				levelTag.putLong("sound_seed", ((ThreadSafeLegacyRandomSourceAccessor) sound).dreammanhunt$getSeed().get());
 			}
 			levelTag.putInt("rand_value", accessor.dreammanhunt$getRandValue());
+			levelTag.putFloat("o_rain_level", accessor.dreammanhunt$getORainLevel());
+			levelTag.putFloat("rain_level", accessor.dreammanhunt$getRainLevel());
+			levelTag.putFloat("o_thunder_level", accessor.dreammanhunt$getOThunderLevel());
+			levelTag.putFloat("thunder_level", accessor.dreammanhunt$getThunderLevel());
 			levelTag.putInt("empty_time", ((ServerLevelAccessor) level).dreammanhunt$getEmptyTime());
 			CompoundTag spawners = new CompoundTag();
 			for (CustomSpawner spawner : ((ServerLevelAccessor) level).dreammanhunt$getCustomSpawners()) {
@@ -141,6 +146,10 @@ final class RuntimeState {
 		((MinecraftServerAccessor) server).dreammanhunt$setTickCount(this.tag.getIntOr("server_tick_count", server.getTickCount()));
 	}
 
+	void applyEntityCounter() {
+		this.tag.getInt("entity_counter").ifPresent(EntityIds::setCounter);
+	}
+
 	void applyLevelRandom(MinecraftServer server) {
 		Map<String, CompoundTag> byDimension = new HashMap<>();
 		for (Tag element : this.tag.getListOrEmpty("levels")) {
@@ -161,6 +170,10 @@ final class RuntimeState {
 				levelTag.getLong("sound_seed").ifPresent(seed -> ((ThreadSafeLegacyRandomSourceAccessor) sound).dreammanhunt$getSeed().set(seed));
 			}
 			levelTag.getInt("rand_value").ifPresent(accessor::dreammanhunt$setRandValue);
+			levelTag.getFloat("o_rain_level").ifPresent(accessor::dreammanhunt$setORainLevel);
+			levelTag.getFloat("rain_level").ifPresent(accessor::dreammanhunt$setRainLevel);
+			levelTag.getFloat("o_thunder_level").ifPresent(accessor::dreammanhunt$setOThunderLevel);
+			levelTag.getFloat("thunder_level").ifPresent(accessor::dreammanhunt$setThunderLevel);
 			levelTag.getInt("empty_time").ifPresent(((ServerLevelAccessor) level)::dreammanhunt$setEmptyTime);
 			CompoundTag spawners = levelTag.getCompoundOrEmpty("spawners");
 			for (CustomSpawner spawner : ((ServerLevelAccessor) level).dreammanhunt$getCustomSpawners()) {

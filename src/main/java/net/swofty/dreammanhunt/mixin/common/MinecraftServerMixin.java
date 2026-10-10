@@ -7,6 +7,8 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import java.util.function.BooleanSupplier;
+
 @Mixin(MinecraftServer.class)
 public abstract class MinecraftServerMixin {
 	@Inject(method = "tickConnection", at = @At("TAIL"))
@@ -14,6 +16,14 @@ public abstract class MinecraftServerMixin {
 		SavestateCoordinator coordinator = SavestateCoordinator.peek((MinecraftServer) (Object) this);
 		if (coordinator != null) {
 			coordinator.poll();
+		}
+	}
+
+	@Inject(method = "tickChildren", at = @At("TAIL"))
+	private void dreammanhunt$syncTrackingDuringRestore(BooleanSupplier haveTime, CallbackInfo ci) {
+		SavestateCoordinator coordinator = SavestateCoordinator.peek((MinecraftServer) (Object) this);
+		if (coordinator != null) {
+			coordinator.afterTick();
 		}
 	}
 }

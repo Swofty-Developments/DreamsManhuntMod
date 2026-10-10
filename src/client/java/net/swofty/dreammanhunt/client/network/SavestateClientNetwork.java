@@ -13,6 +13,7 @@ import net.swofty.dreammanhunt.network.SavestatePayloads;
 import org.jspecify.annotations.Nullable;
 
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class SavestateClientNetwork {
@@ -23,6 +24,7 @@ public final class SavestateClientNetwork {
 	private static int saveRequests;
 	private static int restoresCompleted;
 	private static volatile boolean readySuppressedForTesting;
+	private static final List<Observer> OBSERVERS = new CopyOnWriteArrayList<>();
 
 	private SavestateClientNetwork() {
 	}
@@ -39,10 +41,12 @@ public final class SavestateClientNetwork {
 		ClientPlayNetworking.registerGlobalReceiver(SavestatePayloads.Capture.TYPE, (payload, context) -> {
 			ClientStateManager.get().onCapture(payload.id());
 			ThumbnailManager.requestCapture(payload.id());
+			OBSERVERS.forEach(observer -> observer.onCapture(payload.id()));
 		});
 		ClientPlayNetworking.registerGlobalReceiver(SavestatePayloads.Discard.TYPE, (payload, context) -> {
 			ClientStateManager.get().delete(payload.id());
 			ThumbnailManager.delete(payload.id());
+			OBSERVERS.forEach(observer -> observer.onDiscard(payload.id()));
 		});
 		ClientPlayNetworking.registerGlobalReceiver(SavestatePayloads.RestoreBegin.TYPE, (payload, context) -> {
 			lastRestoreId = payload.id();
@@ -50,6 +54,7 @@ public final class SavestateClientNetwork {
 				context.client().gui.setScreen(null);
 			}
 			ClientStateManager.get().onRestoreBegin(payload.id());
+			OBSERVERS.forEach(observer -> observer.onRestoreBegin(payload.id()));
 		});
 		ClientPlayNetworking.registerGlobalReceiver(SavestatePayloads.RestoreApply.TYPE, (payload, context) -> {
 			String id = payload.id();
@@ -66,13 +71,16 @@ public final class SavestateClientNetwork {
 				Minecraft.getInstance().execute(() -> {
 					if (ClientPlayNetworking.canSend(SavestatePayloads.RestoreReady.TYPE)) {
 						ClientPlayNetworking.send(new SavestatePayloads.RestoreReady(id));
+						OBSERVERS.forEach(observer -> observer.onReadySent(id));
 					}
 				});
 			});
+			OBSERVERS.forEach(observer -> observer.onRestoreApply(id));
 		});
 		ClientPlayNetworking.registerGlobalReceiver(SavestatePayloads.RestoreResume.TYPE, (payload, context) -> {
 			ClientStateManager.get().onRestoreResume(payload.id());
 			restoresCompleted++;
+			OBSERVERS.forEach(observer -> observer.onRestoreResume(payload.id()));
 		});
 		ClientPlayNetworking.registerGlobalReceiver(SavestatePayloads.Notice.TYPE, (payload, context) ->
 				showNotice(payload.text()));
@@ -108,6 +116,10 @@ public final class SavestateClientNetwork {
 		return lastRestoreId;
 	}
 
+	public static void addObserver(Observer observer) {
+		OBSERVERS.add(observer);
+	}
+
 	public static int restoresCompleted() {
 		return restoresCompleted;
 	}
@@ -136,6 +148,7 @@ public final class SavestateClientNetwork {
 		}
 		ClientStateManager.get().capturePending();
 		saveRequests++;
+		OBSERVERS.forEach(Observer::onSaveRequested);
 		ClientPlayNetworking.send(new SavestatePayloads.SaveRequest(name));
 		return true;
 	}
@@ -158,6 +171,29 @@ public final class SavestateClientNetwork {
 			menu.showNotice(text);
 		} else {
 			minecraft.gui.hud.setOverlayMessage(text, false);
+		}
+	}
+
+	public interface Observer {
+		default void onSaveRequested() {
+		}
+
+		default void onCapture(String id) {
+		}
+
+		default void onDiscard(String id) {
+		}
+
+		default void onRestoreBegin(String id) {
+		}
+
+		default void onRestoreApply(String id) {
+		}
+
+		default void onReadySent(String id) {
+		}
+
+		default void onRestoreResume(String id) {
 		}
 	}
 }

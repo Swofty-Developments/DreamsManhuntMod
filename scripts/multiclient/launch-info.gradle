@@ -1,0 +1,31 @@
+// Init script for scripts/multiclient-test.sh: writes the resolved java launch settings of the Loom
+// client game test and server runs to build/multiclient/launch-<run>.json, so the harness can start
+// several game instances directly instead of one Gradle process per instance.
+allprojects {
+	afterEvaluate { project ->
+		if (project.tasks.findByName("runClientGameTest") == null) {
+			return
+		}
+		project.tasks.register("multiclientLaunchInfo") {
+			dependsOn "gametestClasses", "classes", "clientClasses"
+			def runs = ["runClientGameTest", "runServer"]
+			runs.each { dependsOn(project.tasks.named(it).get().dependsOn) }
+			doLast {
+				def out = project.layout.buildDirectory.dir("multiclient").get().asFile
+				out.mkdirs()
+				runs.each { name ->
+					def task = project.tasks.named(name).get()
+					def info = [
+						java      : task.javaLauncher.get().executablePath.asFile.absolutePath,
+						mainClass : task.mainClass.get(),
+						classpath : task.classpath.asPath,
+						jvmArgs   : task.allJvmArgs,
+						args      : task.args ?: [],
+						workingDir: task.workingDir.absolutePath
+					]
+					new File(out, "launch-${name}.json").text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(info))
+				}
+			}
+		}
+	}
+}

@@ -12,6 +12,9 @@
 			"net.swofty.dreammanhunt.test.EndToEndGameTest",
 			"net.swofty.dreammanhunt.test.AudioGameTest",
 			"net.swofty.dreammanhunt.test.RedTeamGameTest"
+		],
+		"client": [
+			"net.swofty.dreammanhunt.test.multiclient.MultiClientDriver"
 		]
 	},
 	"depends": {
