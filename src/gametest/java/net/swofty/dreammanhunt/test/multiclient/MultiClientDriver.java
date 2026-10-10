@@ -20,6 +20,7 @@ import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.util.Util;
 import net.swofty.dreammanhunt.client.network.SavestateClientNetwork;
+import net.swofty.dreammanhunt.client.ui.CutMarker;
 import net.swofty.dreammanhunt.client.ui.SavestateKeys;
 import net.swofty.dreammanhunt.client.ui.SavestateList;
 import net.swofty.dreammanhunt.client.ui.SavestateMenuScreen;
@@ -64,6 +65,8 @@ public final class MultiClientDriver implements ClientModInitializer {
 	private int pendingHudAtSave = -1;
 	private boolean resumePending;
 	private boolean done;
+	private int cutFrames;
+	private boolean cutRun;
 
 	private static final class Window {
 		final String phase;
@@ -94,6 +97,7 @@ public final class MultiClientDriver implements ClientModInitializer {
 		ClientTickEvents.START_CLIENT_TICK.register(this::startTick);
 		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> this.event("disconnected"));
 		ClientTickEvents.END_CLIENT_TICK.register(this::endTick);
+		CutMarker.addFrameListener((frame, cut, save) -> this.onFrame(frame, cut));
 		if (!this.role.equals("vanilla")) {
 			SavestateClientNetwork.addObserver(new SavestateClientNetwork.Observer() {
 				@Override
@@ -189,6 +193,24 @@ public final class MultiClientDriver implements ClientModInitializer {
 					StandardOpenOption.CREATE, StandardOpenOption.APPEND);
 		} catch (IOException e) {
 			throw new IllegalStateException(e);
+		}
+	}
+
+	private void onFrame(long frame, boolean cut) {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (cut) {
+			if (!this.cutRun) {
+				this.cutRun = true;
+				this.cutFrames = 0;
+				this.event("cut_marker_on", "frame", frame, "restores", SavestateClientNetwork.restoresCompleted());
+			}
+			this.cutFrames++;
+			if (this.cutFrames == 3) {
+				this.takeShot(minecraft, "frozen", 0);
+			}
+		} else if (this.cutRun) {
+			this.cutRun = false;
+			this.event("cut_marker_off", "frame", frame, "frozen_frames", this.cutFrames, "restores", SavestateClientNetwork.restoresCompleted());
 		}
 	}
 
