@@ -3,10 +3,17 @@
 	"package": "net.swofty.dreammanhunt.mixin.common",
 	"compatibilityLevel": "JAVA_25",
 	"mixins": [
+		"CompoundContainerAccessor",
+		"ContainerOpenersCounterAccessor",
+		"ContainerOpenersCounterMixin",
+		"LivingEntitySyncAccessor",
 		"MinecraftServerMixin",
 		"PlayerChunkSenderAccessor",
+		"PortalProcessorAccessor",
 		"ServerGamePacketListenerImplMixin",
+		"ServerGamePacketListenerSyncAccessor",
 		"ServerPlayerMixin",
+		"ShulkerBoxBlockEntityMixin",
 		"TickRateManagerMixin"
 	],
 	"injectors": {
