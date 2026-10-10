@@ -7,7 +7,7 @@
 	"authors": [
 		"Swofty"
 	],
-	"license": "MIT",
+	"license": "LicenseRef-DreamManhunt",
 	"icon": "assets/dreammanhunt/icon.png",
 	"environment": "*",
 	"entrypoints": {

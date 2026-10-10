@@ -167,4 +167,4 @@ Thanks to the Fabric team and all contributors.
 
 ## License
 
-See the repository for license details.
+Use DreamManhunt in a YouTube video and the description must mention **Swofty**. See [LICENSE](LICENSE).
