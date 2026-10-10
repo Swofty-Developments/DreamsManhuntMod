@@ -54,6 +54,25 @@ final class EntityAnimations {
 		}
 	}
 
+	static CompoundTag captureElytra(LivingEntity entity) {
+		try {
+			return capturePrimitives(entity.elytraAnimationState);
+		} catch (ReflectiveOperationException e) {
+			throw new IllegalStateException(e);
+		}
+	}
+
+	static void applyElytra(LivingEntity entity, CompoundTag tag) {
+		if (tag.isEmpty()) {
+			return;
+		}
+		try {
+			applyPrimitives(entity.elytraAnimationState, tag);
+		} catch (ReflectiveOperationException e) {
+			throw new IllegalStateException(e);
+		}
+	}
+
 	private static String key(Field field) {
 		return field.getDeclaringClass().getSimpleName() + "." + field.getName();
 	}

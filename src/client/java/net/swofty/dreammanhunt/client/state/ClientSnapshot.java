@@ -387,6 +387,7 @@ public final class ClientSnapshot {
 		tag.putInt("activationTicks", activation.dm$getTicks());
 		tag.putFloat("activationOffX", activation.dm$getOffX());
 		tag.putFloat("activationOffY", activation.dm$getOffY());
+		tag.put("elytra", EntityAnimations.captureElytra(player));
 		return tag;
 	}
 
@@ -466,6 +467,7 @@ public final class ClientSnapshot {
 		activation.dm$setTicks(tag.getIntOr("activationTicks", 0));
 		activation.dm$setOffX(tag.getFloatOr("activationOffX", 0.0F));
 		activation.dm$setOffY(tag.getFloatOr("activationOffY", 0.0F));
+		EntityAnimations.applyElytra(player, tag.getCompoundOrEmpty("elytra"));
 	}
 
 	private static void applyUse(LocalPlayer player, LocalPlayerAccessor local, CompoundTag tag) {
