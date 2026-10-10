@@ -38,6 +38,7 @@
 		"TextureManagerAccessor",
 		"TextureManagerMixin",
 		"TextureTransformMixin",
+		"TimeItemPropertyMixin",
 		"ToastInstanceMixin",
 		"WalkAnimationStateAccessor",
 		"WorldBorderRendererMixin"

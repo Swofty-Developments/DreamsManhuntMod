@@ -144,6 +144,14 @@ final class PlayerMotionState {
 		return new Input(keys[0] != 0, keys[1] != 0, keys[2] != 0, keys[3] != 0, keys[4] != 0, keys[5] != 0, keys[6] != 0);
 	}
 
+	static CompoundTag captureRandomState(RandomSource random) {
+		return captureRandom(random);
+	}
+
+	static void applyRandomState(RandomSource random, CompoundTag tag) {
+		applyRandom(random, tag);
+	}
+
 	private static CompoundTag captureRandom(RandomSource random) {
 		CompoundTag tag = new CompoundTag();
 		tag.putString("class", random.getClass().getName());

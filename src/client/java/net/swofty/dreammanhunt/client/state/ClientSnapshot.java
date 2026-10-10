@@ -75,6 +75,7 @@ public final class ClientSnapshot {
 		root.put("fades", FadeState.capture(minecraft));
 		root.put("destroyProgress", captureDestroyProgress(minecraft.level));
 		root.put("screen", ScreenState.capture(minecraft));
+		root.put("needles", NeedleState.capture(minecraft));
 		root.put("audio", net.swofty.dreammanhunt.client.state.audio.AudioState.capture(minecraft));
 		net.swofty.dreammanhunt.client.state.extra.ExtraState.capture(minecraft, root);
 		LiveStates.Live live = LiveStates.create(root);
@@ -117,6 +118,7 @@ public final class ClientSnapshot {
 		minecraft.level.environmentAttributes().invalidateTickCache();
 		net.swofty.dreammanhunt.client.state.audio.AudioState.apply(minecraft, root.getCompoundOrEmpty("audio"));
 		ScreenState.apply(minecraft, root.getCompoundOrEmpty("screen"));
+		NeedleState.apply(minecraft, root.getCompoundOrEmpty("needles"));
 	}
 
 	public static void resume(Minecraft minecraft, CompoundTag root) {
