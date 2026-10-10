@@ -2,9 +2,9 @@
 
 [<img src="https://discordapp.com/assets/e4923594e694a21542a489471ecffa50.svg" alt="Discord" height="55" />](https://discord.swofty.net)
 
-A Fabric mod for Minecraft 26.3 that savestates the entire game: the server, the world and every connected client. Press a key to save, open the menu, and click a savestate to continue from it. Footage cut from a save to its restore matches uncut footage frame for frame, down to the hunger-bar jolts.
+A Fabric mod for Minecraft 26.3 that savestates the entire game, create your very own Dream Manhunt!
 
-> **Note**: Install the mod on the server and on every player's client, runner and hunters alike.
+> **Note**: Install the mod on the server and on every player's client.
 
 ## Features
 
@@ -29,7 +29,6 @@ A Fabric mod for Minecraft 26.3 that savestates the entire game: the server, the
 
 ### HUD
 
-- Hunger-bar jolts
 - Low-health heart shake
 - Heart blink, ghost hearts and the damage flash
 - Air bubble wobble
@@ -37,6 +36,7 @@ A Fabric mod for Minecraft 26.3 that savestates the entire game: the server, the
 - Chat lines, with their fade-out timing and scroll position
 - Held-item name popup
 - Item cooldown overlays, including ender pearls
+- Hunger-bar jolts
 - Boss bars
 - Toasts in flight, including advancement and recipe toasts
 - Vignette, spyglass zoom and autosave indicator
@@ -132,7 +132,7 @@ Both are under **Controls → DreamManhunt**.
 }
 ```
 
-The singleplayer host and players with the `dreammanhunt:manage` permission can save, load and delete. Everyone else gets a read-only menu.
+The singleplayer host and players with the `dreammanhunt:manage` permission can save, load and delete.
 
 ## Requirements
 
