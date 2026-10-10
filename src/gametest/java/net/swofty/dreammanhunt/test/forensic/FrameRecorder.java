@@ -33,7 +33,6 @@ public final class FrameRecorder {
 
 	private static volatile long clock;
 	private static volatile Recording active;
-	private static volatile int seenSaveRequests;
 	private static volatile int seenRestores;
 	private static volatile int liveHud = -1;
 	private static volatile boolean overrideArmed;
@@ -110,6 +109,15 @@ public final class FrameRecorder {
 		}
 		ClientTickEvents.START_CLIENT_TICK.register(FrameRecorder::onStartTick);
 		ClientTickEvents.END_CLIENT_TICK.register(FrameRecorder::onEndTick);
+		SavestateClientNetwork.addObserver(new SavestateClientNetwork.Observer() {
+			@Override
+			public void onCapture(String id) {
+				Recording recording = active;
+				if (recording != null && recording.saveClock < 0) {
+					recording.saveClock = clock;
+				}
+			}
+		});
 	}
 
 	public static int hudTick(Minecraft minecraft) {
@@ -146,7 +154,6 @@ public final class FrameRecorder {
 			throw new AssertionError(e);
 		}
 		Recording recording = new Recording(name, dir, geometry, fullFrameEvery);
-		seenSaveRequests = SavestateClientNetwork.saveRequests();
 		seenRestores = SavestateClientNetwork.restoresCompleted();
 		active = recording;
 		return recording;
@@ -237,14 +244,6 @@ public final class FrameRecorder {
 	private static void onEndTick(Minecraft minecraft) {
 		if (!ClientStateManager.get().isRestoring() && minecraft.level != null) {
 			liveHud = hudTick(minecraft);
-		}
-		int requests = SavestateClientNetwork.saveRequests();
-		if (requests != seenSaveRequests) {
-			seenSaveRequests = requests;
-			Recording recording = active;
-			if (recording != null && recording.saveClock < 0) {
-				recording.saveClock = clock;
-			}
 		}
 	}
 }

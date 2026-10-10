@@ -208,7 +208,7 @@ public final class ForensicGameTest implements FabricClientGameTest {
 		context.getInput().pressKey(SavestateKeys.SAVE);
 		String id = awaitNewState(context, server, before);
 		if (recording.saveClock() < 0) {
-			throw new AssertionError(name + ": the save key press was not seen");
+			throw new AssertionError(name + ": the client capture was not seen");
 		}
 
 		server.runOnServer(s -> {
