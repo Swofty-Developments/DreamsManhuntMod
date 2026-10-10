@@ -120,11 +120,11 @@ S2C: `StateList(list<SavestateInfo>, canManage)`, `Capture(id)`, `RestoreBegin(i
 `RestoreApply(id)`, `RestoreResume(id)`, `Notice(text)`.
 
 Save:
-1. Initiating client: `ClientStateManager.capturePending()`, then send `SaveRequest`.
-2. Server (permission check, not busy): generate `id = UUID.randomUUID().toString()`, send `Capture(id)`
-   to every client with the mod **first** (so they capture the same moment the server snapshots, before
-   the save hitch), then `engine.save(id, name, player)`. Clients that are not the initiator capture on
-   receipt; the initiator binds its pending capture. If the save fails, tell clients to drop the id.
+1. Initiating client sends `SaveRequest`.
+2. Server (permission check, not busy): generates `id`, sends `Capture(id)` to every client with the mod,
+   then `engine.save(id, name, player)` on the same tick. Every client, the initiator included, captures
+   when `Capture(id)` arrives, so all snapshots line up with the server's tick. If the save fails, clients
+   drop the id (`Discard(id)`).
 3. Each client stores a thumbnail (downscaled screenshot) for the id.
 
 Restore:
