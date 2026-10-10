@@ -72,6 +72,7 @@ public final class ClientSnapshot {
 		root.put("entities", captureEntities(minecraft));
 		root.put("chat", captureChat(minecraft, ops));
 		root.put("options", OptionsState.capture(minecraft));
+		root.put("audio", net.swofty.dreammanhunt.client.state.audio.AudioState.capture(minecraft));
 		List<GuiMessage> liveChat = new ArrayList<>(((ChatComponentAccessor) minecraft.gui.hud.getChat()).dm$getAllMessages());
 		LIVE_CHAT.put(root, liveChat);
 		return root;
@@ -98,6 +99,7 @@ public final class ClientSnapshot {
 		camera.attributeProbe().reset();
 		camera.attributeProbe().tick(minecraft.level, camera.position());
 		minecraft.level.environmentAttributes().invalidateTickCache();
+		net.swofty.dreammanhunt.client.state.audio.AudioState.apply(minecraft, root.getCompoundOrEmpty("audio"));
 	}
 
 	public static void resume(Minecraft minecraft, CompoundTag root) {
