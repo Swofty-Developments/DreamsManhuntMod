@@ -75,7 +75,9 @@ final class PlayerMotionState {
 			player.setPose(Pose.valueOf(tag.getStringOr("pose", Pose.STANDING.name())));
 		} catch (IllegalArgumentException ignored) {
 		}
-		player.getEntityData().set(sharedFlags(), tag.getByteOr("flags", player.getEntityData().get(sharedFlags())));
+		byte flags = tag.getByteOr("flags", player.getEntityData().get(sharedFlags()));
+		player.setSprinting((flags & (1 << 3)) != 0);
+		player.getEntityData().set(sharedFlags(), flags);
 		CompoundTag primitives = tag.getCompoundOrEmpty("primitives");
 		try {
 			for (Field field : Reflect.instanceFields(player.getClass())) {
