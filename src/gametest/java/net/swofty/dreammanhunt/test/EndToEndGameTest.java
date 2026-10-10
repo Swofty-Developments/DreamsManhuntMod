@@ -15,6 +15,8 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Hud;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.ConfirmScreen;
+import net.minecraft.client.gui.screens.PauseScreen;
+import net.minecraft.client.server.IntegratedServer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
@@ -35,6 +37,7 @@ import net.swofty.dreammanhunt.client.ui.SavestateMenuScreen;
 import net.swofty.dreammanhunt.client.ui.ThumbnailManager;
 import net.swofty.dreammanhunt.server.coordinator.SavestateConfig;
 import net.swofty.dreammanhunt.server.coordinator.SavestateCoordinator;
+import net.swofty.dreammanhunt.server.coordinator.SavestatePermissions;
 import net.swofty.dreammanhunt.server.engine.SavestateEngine;
 
 import java.io.IOException;
@@ -358,6 +361,12 @@ public final class EndToEndGameTest implements FabricClientGameTest {
 			long[] frozenB = server.computeOnServer(s -> new long[]{s.overworld().getGameTime(), onlyPlayer(s).tickCount});
 			check(frozenA[0] == frozenB[0], "level time advanced during the barrier");
 			check(frozenA[1] == frozenB[1], "player ticked during the barrier");
+			if (server.computeOnServer(s -> s instanceof IntegratedServer)) {
+				context.setScreen(() -> new PauseScreen(true));
+				context.waitTicks(5);
+				check(server.computeOnServer(s -> !s.isPaused()), "a pause screen must not pause the integrated server during a restore barrier");
+				context.setScreen(() -> null);
+			}
 			server.waitFor(s -> !SavestateCoordinator.get(s).isBusy(), 400);
 			long waited = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
 			check(waited >= 1500 && waited < 10000, "barrier timeout took " + waited + " ms, expected about 2000");
@@ -376,6 +385,12 @@ public final class EndToEndGameTest implements FabricClientGameTest {
 		context.getInput().pressKey(SavestateKeys.SAVE);
 		context.waitTicks(20);
 		check(serverIds(server).equals(before), "a player without permission must not be able to save");
+		check(!server.computeOnServer(s -> SavestatePermissions.canManage(onlyPlayer(s))), "non-operators are denied by default");
+		SavestateConfig original = SavestateConfig.get();
+		SavestateConfig.set(new SavestateConfig(true, original.permissionLevel(), original.readyTimeoutSeconds()));
+		boolean everyone = server.computeOnServer(s -> SavestatePermissions.canManage(onlyPlayer(s)));
+		SavestateConfig.set(original);
+		check(everyone, "allowEveryone must grant permission");
 
 		SavestateMenuScreen menu = openMenu(context);
 		check(!menu.canManage(), "menu must be read-only without permission");
