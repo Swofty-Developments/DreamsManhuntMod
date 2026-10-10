@@ -185,6 +185,14 @@ Fabric's screenshot renders through `GameRenderer.extract/render` with a fixed `
 
 `spawners` spawns pigs (`RequiredPlayerRange 16`). With the engine's spawner display-entity regression in main (finding 13, still thrown 2,334 times per run), the spawned pigs' positions and AI differ between the timelines (21% at +26 ticks before the ticker-order fix). The final run shows whether ticker order alone closes it.
 
+### 21. Server beacon runtime state is not restored (b) — handed off to engine
+
+Location: `world/level/block/entity/BeaconBlockEntity.java:72-73,121-183,321-334`.
+
+On the server, `levels`, `lastCheckY` and the beam scan lists are not read back from NBT. The rebuilt beacon re-scans from scratch and recomputes `levels` on the next `gameTime % 80 == 0`. Activation (`BEACON_ACTIVATE` sound, the `CONSTRUCT_BEACON` advancement with its chat line and toast) therefore fires at a different tick than in the uncut timeline.
+
+Evidence: `beacon` (key + menu path) is 3.1% at +10 ticks, from the "Bring Home the Beacon" chat line appearing earlier in the restored timeline. The toast carries over into the next scene's frame (`conduit` 1.2%, toast only). The client side is restored (finding 2). The server needs the same: capture `levels`, `lastCheckY`, `beamSections` and `checkingBeamSections` per beacon and put them back after the level rebuild.
+
 ### Residual
 
 - `enchanting_table` (0.3-0.8%): page flips use the static `EnchantingTableBlockEntity.RANDOM`. In singleplayer both the integrated server thread and the client thread tick enchanting tables and draw from that one generator, so the interleaving is decided by thread scheduling. It cannot be made exact without giving each side its own generator. On a dedicated server only the client draws from it.
