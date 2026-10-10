@@ -1,0 +1,29 @@
+{
+	"required": true,
+	"package": "net.swofty.dreammanhunt.client.mixin.audio",
+	"compatibilityLevel": "JAVA_25",
+	"client": [
+		"AbstractSoundInstanceAccessor",
+		"AbstractSoundInstanceMixin",
+		"BiomeAmbientSoundsHandlerAccessor",
+		"ChannelHandleAccessor",
+		"ChannelMixin",
+		"ClientLevelAudioAccessor",
+		"LegacyRandomAudioAccessor",
+		"LevelEventHandlerAccessor",
+		"LocalPlayerAudioAccessor",
+		"MinecraftAudioMixin",
+		"MusicManagerAccessor",
+		"PlayerAudioAccessor",
+		"SoundEngineAccessor",
+		"SoundEngineMixin",
+		"SoundManagerAccessor",
+		"UnderwaterAmbientSoundHandlerAccessor"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	},
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}
