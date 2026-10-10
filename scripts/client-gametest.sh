@@ -4,13 +4,13 @@
 # Screenshots land in build/run/clientGameTest/screenshots/, logs in build/run/clientGameTest/logs/.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-# One headless run at a time across every worktree; the box needs CPU headroom and the pixel tests need a quiet machine.
-exec 9>/tmp/dreammanhunt-headless.lock
-if ! flock -n 9; then
-	echo "waiting for another headless DreamManhunt run to finish..." >&2
-	flock 9
-fi
+# At most two headless runs at a time across every worktree; the box needs CPU headroom and the pixel tests need a quiet machine.
+DM_CPUS="${DM_CPUS:-2-7,10,11,14-19}"
+until { exec 9>/tmp/dreammanhunt-headless-1.lock && flock -n 9; } || { exec 9>/tmp/dreammanhunt-headless-2.lock && flock -n 9; }; do
+	echo "waiting for a free headless DreamManhunt slot..." >&2
+	sleep 5
+done
 TEST="${1:-all}"
 XVFB="$(nix build --no-link --print-out-paths nixpkgs#xvfb-run)/bin/xvfb-run"
-exec env -u WAYLAND_DISPLAY ALSOFT_CONF="$PWD/scripts/alsoft-gametest.conf" taskset -c 2-7,10,11,14-31 "$XVFB" -a -s "-screen 0 1280x720x24" \
+exec env -u WAYLAND_DISPLAY ALSOFT_CONF="$PWD/scripts/alsoft-gametest.conf" taskset -c "$DM_CPUS" "$XVFB" -a -s "-screen 0 1280x720x24" \
 	steam-run ./gradlew --no-daemon --no-configuration-cache runClientGameTest -PdmTest="$TEST"
