@@ -62,7 +62,6 @@ public final class MultiClientDriver implements ClientModInitializer {
 	private int restoreStage;
 	private int restoreWait;
 	private @Nullable String stateId;
-	private int pendingHudAtSave = -1;
 	private boolean resumePending;
 	private boolean done;
 	private int cutFrames;
@@ -102,7 +101,6 @@ public final class MultiClientDriver implements ClientModInitializer {
 			SavestateClientNetwork.addObserver(new SavestateClientNetwork.Observer() {
 				@Override
 				public void onSaveRequested() {
-					MultiClientDriver.this.pendingHudAtSave = MultiClientDriver.this.hud();
 					MultiClientDriver.this.event("save_requested");
 				}
 
@@ -216,8 +214,7 @@ public final class MultiClientDriver implements ClientModInitializer {
 
 	private void onCapture(String id) {
 		this.stateId = id;
-		int base = this.pendingHudAtSave >= 0 ? this.pendingHudAtSave : this.hud();
-		this.pendingHudAtSave = -1;
+		int base = this.hud();
 		this.captureWindow = new Window("cap", base);
 		Minecraft.getInstance().gui.toastManager().clear();
 		this.event("capture", "id", id, "base", base);
