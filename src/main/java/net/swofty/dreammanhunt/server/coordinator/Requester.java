@@ -3,9 +3,12 @@ package net.swofty.dreammanhunt.server.coordinator;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.swofty.dreammanhunt.network.SavestatePayloads;
 import org.jspecify.annotations.Nullable;
+
+import java.util.UUID;
 
 public interface Requester {
 	@Nullable ServerPlayer player();
@@ -18,16 +21,20 @@ public interface Requester {
 
 	void failure(Component message);
 
-	static Requester of(ServerPlayer player) {
+	static Requester of(ServerPlayer requester) {
+		MinecraftServer server = requester.level().getServer();
+		UUID uuid = requester.getUUID();
 		return new Requester() {
 			@Override
-			public ServerPlayer player() {
-				return player;
+			public @Nullable ServerPlayer player() {
+				ServerPlayer current = server.getPlayerList().getPlayer(uuid);
+				return current != null ? current : requester;
 			}
 
 			@Override
 			public boolean canManage() {
-				return SavestatePermissions.canManage(player);
+				ServerPlayer player = this.player();
+				return player != null && SavestatePermissions.canManage(player);
 			}
 
 			@Override
@@ -46,7 +53,8 @@ public interface Requester {
 			}
 
 			private void send(Component message) {
-				if (player.hasDisconnected()) {
+				ServerPlayer player = server.getPlayerList().getPlayer(uuid);
+				if (player == null || player.hasDisconnected()) {
 					return;
 				}
 				if (ServerPlayNetworking.canSend(player, SavestatePayloads.Notice.TYPE)) {
