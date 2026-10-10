@@ -5,6 +5,7 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.ObjectSelectionList;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
@@ -152,6 +153,16 @@ public final class SavestateList extends ObjectSelectionList<SavestateList.Entry
 			int ellipsis = font.width("...");
 			FormattedText clipped = font.substrByWidth(text, Math.max(0, maxWidth - ellipsis));
 			graphics.text(font, clipped.getString() + "...", x, y, color, false);
+		}
+
+		@Override
+		public boolean keyPressed(KeyEvent event) {
+			if (event.isSelection() && SavestateList.this.screen.canManage()) {
+				SavestateList.this.minecraft.getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
+				SavestateList.this.screen.restore(this.info);
+				return true;
+			}
+			return super.keyPressed(event);
 		}
 
 		@Override
