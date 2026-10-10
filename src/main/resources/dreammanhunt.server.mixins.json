@@ -12,6 +12,7 @@
 		"EntityTypeLoadMixin",
 		"GameRulesAccessor",
 		"ItemCooldownsAccessor",
+		"ServerPlayerGameModeAccessor",
 		"LegacyRandomSourceAccessor",
 		"LevelAccessor",
 		"LivingEntityAccessor",

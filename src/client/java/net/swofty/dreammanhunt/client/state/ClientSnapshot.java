@@ -74,6 +74,7 @@ public final class ClientSnapshot {
 		root.put("cooldowns", CooldownState.capture(minecraft.player));
 		root.put("fades", FadeState.capture(minecraft));
 		root.put("destroyProgress", captureDestroyProgress(minecraft.level));
+		root.put("mining", MiningState.capture(minecraft));
 		root.put("screen", ScreenState.capture(minecraft));
 		root.put("needles", NeedleState.capture(minecraft));
 		root.put("audio", net.swofty.dreammanhunt.client.state.audio.AudioState.capture(minecraft));
@@ -103,6 +104,7 @@ public final class ClientSnapshot {
 			minecraft.gui.toastManager().clear();
 		}
 		applyDestroyProgress(minecraft.level, root.getListOrEmpty("destroyProgress"));
+		MiningState.apply(minecraft, root.getCompoundOrEmpty("mining"));
 		CooldownState.apply(minecraft.player, root.getCompoundOrEmpty("cooldowns"));
 		FadeState.apply(minecraft, root.getCompoundOrEmpty("fades"));
 		applyHud(minecraft, root.getCompoundOrEmpty("hud"), ops);
