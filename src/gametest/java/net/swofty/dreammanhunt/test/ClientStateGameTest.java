@@ -2,6 +2,7 @@ package net.swofty.dreammanhunt.test;
 
 import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -12,6 +13,14 @@ import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.toasts.SystemToast;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.AnimationState;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.animal.frog.Frog;
+import net.minecraft.world.entity.monster.Creeper;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerPlayer;
@@ -41,16 +50,38 @@ public final class ClientStateGameTest implements FabricClientGameTest {
 		singleplayer.getServer().runCommand("time set 6000");
 		singleplayer.getServer().runCommand("weather clear");
 		singleplayer.getServer().runCommand("clear @a");
+		singleplayer.getServer().runCommand("kill @e[type=!minecraft:player]");
 		singleplayer.getServer().runCommand("give @a minecraft:enchanted_golden_apple 3");
+		singleplayer.getServer().runCommand("give @a minecraft:ender_pearl 16");
 		context.runOnClient(mc -> {
 			mc.player.getInventory().setSelectedSlot(0);
 			mc.player.setYRot(30.0F);
 			mc.player.setXRot(20.0F);
 		});
 		setSurvivalStats(singleplayer, 16.0F, 6);
-		context.waitTicks(60);
+		context.waitTicks(40);
+		singleplayer.getServer().runCommand("execute as @p at @p rotated ~ 0 run summon minecraft:frog ^-0.8 ^ ^3.5 {NoAI:1b,Silent:1b}");
+		singleplayer.getServer().runCommand("execute as @p at @p rotated ~ 0 run summon minecraft:creeper ^1.6 ^ ^5 {NoAI:1b,Silent:1b}");
+		singleplayer.getServer().runOnServer(server -> {
+			for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+				player.getCooldowns().addCooldown(new ItemStack(Items.ENDER_PEARL), 600);
+			}
+		});
+		context.waitTicks(15);
+		singleplayer.getServer().runCommand("execute as @p at @p run particle minecraft:end_rod ^ ^1.5 ^3 0.6 0.4 0.6 0 40 force");
+		context.waitTicks(4);
 		singleplayer.getServer().runCommand("tick freeze");
-		context.waitTicks(260);
+		context.waitTicks(80);
+		context.runOnClient(mc -> poseMobs(mc, true));
+		context.runOnClient(mc -> {
+			for (int i = 0; i < 4; i++) {
+				mc.gui.hud.getChat().addClientSystemMessage(Component.literal("Line " + i + " added before the save, fading out after it"));
+			}
+		});
+		context.waitTicks(145);
+		context.runOnClient(mc -> SystemToast.add(mc.gui.toastManager(), SystemToast.SystemToastId.LOW_DISK_SPACE,
+			Component.literal("Advancement-style toast"), Component.literal("on screen at the save")));
+		context.waitTicks(30);
 
 		CompoundTag[] captured = new CompoundTag[1];
 		context.runOnClient(mc -> {
@@ -64,6 +95,12 @@ public final class ClientStateGameTest implements FabricClientGameTest {
 
 		context.waitTicks(150);
 		context.runOnClient(mc -> {
+			mc.particleEngine.clearParticles();
+			mc.gui.toastManager().clear();
+			SystemToast.add(mc.gui.toastManager(), SystemToast.SystemToastId.PERIODIC_NOTIFICATION, Component.literal("Different toast"), null);
+			mc.player.getCooldowns().addCooldown(new ItemStack(Items.ENDER_PEARL), 50);
+			mc.gui.hud.getChat().addClientSystemMessage(Component.literal("Message from after the save"));
+			poseMobs(mc, false);
 			mc.options.fov().set(110);
 			mc.options.bobView().set(!mc.options.bobView().get());
 			mc.options.gamma().set(1.0);
@@ -115,6 +152,7 @@ public final class ClientStateGameTest implements FabricClientGameTest {
 		for (int i = 0; i < afterCapture.size(); i++) {
 			compare(afterCapture.get(i), afterResume.get(i));
 		}
+		assertChatFades(afterCapture, afterResume);
 
 		boolean missing = context.computeOnClient(mc -> !ClientStateManager.get().has("does-not-exist"));
 		AtomicInteger missingReady = new AtomicInteger();
@@ -128,6 +166,74 @@ public final class ClientStateGameTest implements FabricClientGameTest {
 			throw new AssertionError("Missing snapshot restore did not complete cleanly");
 		}
 		context.runOnClient(mc -> ClientStateManager.get().delete(id));
+	}
+
+	private static void poseMobs(Minecraft mc, boolean posed) {
+		try {
+			poseMobsUnchecked(mc, posed);
+		} catch (ReflectiveOperationException e) {
+			throw new IllegalStateException(e);
+		}
+	}
+
+	private static void poseMobsUnchecked(Minecraft mc, boolean posed) throws ReflectiveOperationException {
+		for (Entity entity : mc.level.entitiesForRendering()) {
+			if (entity instanceof Frog frog) {
+				int index = 0;
+				for (Field field : Frog.class.getDeclaredFields()) {
+					if (field.getType() == AnimationState.class) {
+						field.setAccessible(true);
+						AnimationState state = (AnimationState) field.get(frog);
+						if (posed) {
+							state.start(frog.tickCount - 4 - 3 * index++);
+						} else {
+							state.stop();
+						}
+					}
+				}
+			} else if (entity instanceof Creeper creeper) {
+				for (String name : List.of("swell", "oldSwell")) {
+					Field field = Creeper.class.getDeclaredField(name);
+					field.setAccessible(true);
+					field.setInt(creeper, posed ? (name.equals("swell") ? 22 : 21) : 0);
+				}
+			}
+		}
+	}
+
+	private static void assertChatFades(List<Path> afterCapture, List<Path> afterResume) {
+		try {
+			BufferedImage first = ImageIO.read(afterCapture.get(0).toFile());
+			int x1 = (int) (first.getWidth() * 0.28);
+			int y0 = (int) (first.getHeight() * 0.40);
+			int y1 = (int) (first.getHeight() * 0.84);
+			long fadeChange = differingPixels(first, ImageIO.read(afterCapture.get(3).toFile()), 0, y0, x1, y1);
+			if (fadeChange == 0) {
+				throw new AssertionError("Chat did not fade between the capture frames, the scene does not exercise chat fading");
+			}
+			for (int i = 0; i < afterCapture.size(); i++) {
+				long chatDiff = differingPixels(ImageIO.read(afterCapture.get(i).toFile()), ImageIO.read(afterResume.get(i).toFile()), 0, y0, x1, y1);
+				System.out.printf("[clientstate] chat area %s vs %s: %d differing pixels (fade change across capture frames: %d)%n",
+					afterCapture.get(i).getFileName(), afterResume.get(i).getFileName(), chatDiff, fadeChange);
+				if (chatDiff != 0) {
+					throw new AssertionError("Chat area differs after resume at " + afterResume.get(i));
+				}
+			}
+		} catch (IOException e) {
+			throw new AssertionError("Failed to read screenshots", e);
+		}
+	}
+
+	private static long differingPixels(BufferedImage a, BufferedImage b, int x0, int y0, int x1, int y1) {
+		long count = 0;
+		for (int y = y0; y < y1; y++) {
+			for (int x = x0; x < x1; x++) {
+				if (a.getRGB(x, y) != b.getRGB(x, y)) {
+					count++;
+				}
+			}
+		}
+		return count;
 	}
 
 	private static void setSurvivalStats(TestSingleplayerContext singleplayer, float health, int food) {
