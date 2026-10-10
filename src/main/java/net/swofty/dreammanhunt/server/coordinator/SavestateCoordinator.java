@@ -286,10 +286,15 @@ public final class SavestateCoordinator {
 		this.checkComplete();
 	}
 
+	public void beforeTick() {
+		if (this.barrier != null) {
+			this.checkComplete();
+		}
+	}
+
 	public void afterTick() {
 		if (this.barrier != null) {
 			this.syncEntityTracking();
-			this.checkComplete();
 		}
 	}
 

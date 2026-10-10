@@ -19,6 +19,14 @@ public abstract class MinecraftServerMixin {
 		}
 	}
 
+	@Inject(method = "tickServer", at = @At("HEAD"))
+	private void dreammanhunt$completeBarrierBeforeTick(BooleanSupplier haveTime, CallbackInfo ci) {
+		SavestateCoordinator coordinator = SavestateCoordinator.peek((MinecraftServer) (Object) this);
+		if (coordinator != null) {
+			coordinator.beforeTick();
+		}
+	}
+
 	@Inject(method = "tickChildren", at = @At("TAIL"))
 	private void dreammanhunt$syncTrackingDuringRestore(BooleanSupplier haveTime, CallbackInfo ci) {
 		SavestateCoordinator coordinator = SavestateCoordinator.peek((MinecraftServer) (Object) this);
