@@ -76,18 +76,23 @@ public final class RedTeamGameTest implements FabricClientGameTest {
 		this.writeReport(context);
 	}
 
-	private record Scene(String name, Consumer<Env> setup, Consumer<Env> preCapture, boolean viaMenu, int settle) {
+	private record Scene(String name, Consumer<Env> setup, Consumer<Env> preCapture, Consumer<Env> preRestore, boolean viaMenu, int settle) {
 		Scene(String name, Consumer<Env> setup) {
 			this(name, setup, env -> {
+			}, env -> {
 			}, false, 60);
 		}
 
 		Scene menu() {
-			return new Scene(this.name, this.setup, this.preCapture, true, this.settle);
+			return new Scene(this.name, this.setup, this.preCapture, this.preRestore, true, this.settle);
 		}
 
 		Scene before(Consumer<Env> pre) {
-			return new Scene(this.name, this.setup, pre, this.viaMenu, this.settle);
+			return new Scene(this.name, this.setup, pre, this.preRestore, this.viaMenu, this.settle);
+		}
+
+		Scene beforeRestore(Consumer<Env> pre) {
+			return new Scene(this.name, this.setup, this.preCapture, pre, this.viaMenu, this.settle);
 		}
 	}
 
@@ -365,6 +370,28 @@ public final class RedTeamGameTest implements FabricClientGameTest {
 			env.cmd("item replace entity @p weapon.mainhand with minecraft:compass");
 			env.cmd("item replace entity @p weapon.offhand with minecraft:clock");
 		}));
+		list.add(new Scene("walking", env -> env.tp(0, 0, -4, 0, 10))
+			.before(env -> {
+				env.context.getInput().holdKey(options -> options.keyUp);
+				env.context.waitTicks(10);
+			})
+			.beforeRestore(env -> env.context.getInput().holdKey(options -> options.keyUp)));
+		list.add(new Scene("id_phase_mobs", env -> {
+			String nbt = "{NoAI:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b,Rotation:[180f,0f]}";
+			env.summon("minecraft:phantom", -1.5, 2, 4, nbt);
+			env.summon("minecraft:phantom", 1.5, 2.5, 5, nbt);
+			env.summon("minecraft:witch", 0, 0, 3.5, nbt);
+			env.tp(0, 0, 0, 0, -5);
+		}));
+		list.add(new Scene("heads_bell_shulker", env -> {
+			env.block(-1, 0, 3, "minecraft:redstone_block");
+			env.block(-1, 1, 3, "minecraft:dragon_head");
+			env.block(1, 0, 3, "minecraft:redstone_block");
+			env.block(1, 1, 3, "minecraft:piglin_head");
+			env.block(0, 1, 5, "minecraft:bell[attachment=floor]");
+			env.block(0, 0, 5, "minecraft:stone");
+			env.tp(0, 0, 0, 0, 15);
+		}));
 		list.add(new Scene("hotbar_pop", env -> {
 			env.cmd("item replace entity @p hotbar.2 with minecraft:cobblestone 12");
 			env.tp(0, 0, 0, 0, 10);
@@ -402,6 +429,7 @@ public final class RedTeamGameTest implements FabricClientGameTest {
 
 		disturb(context, server, env);
 		context.takeScreenshot(prefix + "-disturbed");
+		scene.preRestore.accept(env);
 
 		if (scene.viaMenu) {
 			restoreViaMenu(context, id, restoresBefore);
@@ -428,6 +456,7 @@ public final class RedTeamGameTest implements FabricClientGameTest {
 		System.out.printf("[redteam] %s: %s%n", scene.name, status);
 		this.results.put(scene.name, status);
 		context.getInput().releaseMouse(InputConstants.MOUSE_BUTTON_RIGHT);
+		context.getInput().releaseKey(options -> options.keyUp);
 		resetClient(context);
 		server.runCommand("savestate delete " + id);
 	}
@@ -437,6 +466,7 @@ public final class RedTeamGameTest implements FabricClientGameTest {
 		server.runCommand("execute in minecraft:overworld run tp @p " + (env.o.getX() + 0.5) + " " + env.o.getY() + " " + (env.o.getZ() + 0.5) + " 0 0");
 		context.waitTicks(5);
 		server.runCommand("kill @e[type=!minecraft:player]");
+		env.fill(-12, -1, -6, 12, -1, 16, "minecraft:grass_block");
 		env.fill(-12, 0, -6, 12, 12, 16, "minecraft:air");
 		env.fill(-12, 13, -6, 12, 45, 16, "minecraft:air");
 		server.runCommand("effect clear @a");
