@@ -181,9 +181,9 @@ Fabric's screenshot renders through `GameRenderer.extract/render` with a fixed `
 
 `GlyphSeedMixin` now reseeds `Font.random` at the head of `GameRenderer.extract` from `mix(session salt ^ mix(clientTickCount, partial tick bits))`. Glyphs still change every frame, as in vanilla, but they are a pure function of game time (tick + partial tick), like everything else on screen. `lightning_obfuscated` went from 5.7% to 0.000%.
 
-### 20. Spawner scene now diverges through spawned pigs (b) — handed off to engine
+### 20. Spawner scene diverged through spawned pigs (b) — closed by ticker order and the engine round 4
 
-`spawners` spawns pigs (`RequiredPlayerRange 16`). With the engine's spawner display-entity regression in main (finding 13, still thrown 2,334 times per run), the spawned pigs' positions and AI differ between the timelines (21% at +26 ticks before the ticker-order fix). The final run shows whether ticker order alone closes it.
+`spawners` spawns pigs (`RequiredPlayerRange 16`). Before the ticker-order fix their positions and AI differed (21% at +26 ticks). After the ticker-order fix and main `5d0c035` (spawner display mobs), it is 0.4%: sub-pixel flame and pig edges.
 
 ### 21. Server beacon runtime state is not restored (b) — handed off to engine
 
@@ -193,9 +193,19 @@ On the server, `levels`, `lastCheckY` and the beam scan lists are not read back 
 
 Evidence: `beacon` (key + menu path) is 3.1% at +10 ticks, from the "Bring Home the Beacon" chat line appearing earlier in the restored timeline. The toast carries over into the next scene's frame (`conduit` 1.2%, toast only). The client side is restored (finding 2). The server needs the same: capture `levels`, `lastCheckY`, `beamSections` and `checkingBeamSections` per beacon and put them back after the level rebuild.
 
-### Residual
+### 22. Static client generators created off the client thread (b) — fixed (`c98461c`)
 
-- `enchanting_table` (0.3-0.8%): page flips use the static `EnchantingTableBlockEntity.RANDOM`. In singleplayer both the integrated server thread and the client thread tick enchanting tables and draw from that one generator, so the interleaving is decided by thread scheduling. It cannot be made exact without giving each side its own generator. On a dedicated server only the client draws from it.
+`EnchantingTableBlockEntity.RANDOM` (page flips) and `SpellParticle.RANDOM` are class-initialised by whichever thread touches the class first, often the integrated server thread. The client generator registry therefore never saw them. Both are now restored explicitly. `enchanting_table` went from 0.76% to 0.000%.
+
+### 23. Compass and clock random spin in the Nether still differs (b) — open, handed off to client-state
+
+`nether_compass_clock` is 1.3-1.8% and `recovery_compass` (no death location, so it spins) is 0.4-1.5%. Only the needle pixels differ. The spin comes from `CompassAngleState.random` / `Time.randomSource` through the shared no-target wobbler (`client/renderer/item/properties/numeric/CompassAngleState.java:49-55`, `Time.java:22-36`). Those RNGs are created while models bake on worker threads, so the registry misses them.
+
+Restoring their seeds together with the wobblers (commit `0c2b76f`, reverted in `b3bf57a`) did not change the result and made `recovery_compass` worse. The update must therefore also run at a different moment relative to `level.getGameTime()` in the two timelines. Likely causes: frames rendered during the barrier with a server-set game time, or the restore's two applies. A per-frame trace of `noTargetWobbler.lastUpdateTick` against `gameTime` in both timelines should show it.
+
+### 24. Nether scene setup (test bug) — fixed (`bd1c8cc`)
+
+The box was filled before the Nether chunks were loaded ("That position is not loaded"), so both timelines died in lava. The scene now force-loads, waits for the chunks and checks the box exists. On main `5d0c035` (engine round 4), `nether` is 0.000% at every frame, with player position, camera, dimension and health identical per frame (20.0 in both). No lower-health or early-death difference remains.
 
 ## Randomness at the root
 
