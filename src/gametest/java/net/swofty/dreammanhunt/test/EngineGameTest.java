@@ -298,10 +298,10 @@ public final class EngineGameTest implements FabricClientGameTest {
 			this.runOpenMenuCheck(context, server, playerPos.offset(-1, 0, 2), failures);
 		}
 		if (label.equals("sp") && failures.isEmpty()) {
-			this.runNetherUseCheck(context, server, failures);
+			this.runRollbackCheck(context, server, connection, id, playerPos.offset(1, 0, 2), failures);
 		}
 		if (label.equals("sp") && failures.isEmpty()) {
-			this.runRollbackCheck(context, server, connection, id, playerPos.offset(1, 0, 2), failures);
+			this.runNetherUseCheck(context, server, failures);
 		}
 		server.runOnServer(s -> SavestateEngine.get(s).delete(id));
 		if (!failures.isEmpty()) {
