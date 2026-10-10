@@ -19,6 +19,7 @@ public abstract class MinecraftServerMixin {
 	@Inject(method = "<init>", at = @At("RETURN"))
 	private void dm$rememberThread(CallbackInfo ci) {
 		SeedStreams.setServerThread(this.serverThread);
+		SeedStreams.setServer((MinecraftServer) (Object) this);
 	}
 
 	@Inject(method = "tickChildren", at = @At("HEAD"))
