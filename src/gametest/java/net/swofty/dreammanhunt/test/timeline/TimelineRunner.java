@@ -19,10 +19,14 @@ import java.util.Map;
 import java.util.Set;
 
 public final class TimelineRunner {
-	public record Divergence(String subject, int tick, String field, String a, String b) {
+	public record Divergence(String subject, int tick, String field, String a, String b, List<String> others) {
 		@Override
 		public String toString() {
-			return "tick " + this.tick + " " + this.subject + " " + this.field + ": A=" + clip(this.a) + " B=" + clip(this.b);
+			StringBuilder text = new StringBuilder("tick " + this.tick + " " + this.subject + " " + this.field + ": A=" + clip(this.a) + " B=" + clip(this.b));
+			for (String other : this.others) {
+				text.append("\n[timeline]       also ").append(other);
+			}
+			return text.toString();
 		}
 	}
 
@@ -39,6 +43,7 @@ public final class TimelineRunner {
 		}
 	}
 
+	private static final int MAX_EXTRA_FIELDS = 12;
 	private final ClientGameTestContext context;
 	private final TestServerContext server;
 	private final BlockPos origin;
@@ -63,6 +68,7 @@ public final class TimelineRunner {
 			TimelineEnv.run(s, "savestate save " + name);
 			SavestateInfo info = SavestateEngine.get(s).find(name).orElseThrow();
 			recordingA[0] = new TimelineRecorder.Recording(scenario, env, area, info.gameTime());
+			recordingA[0].server.put(0, Probes.captureServer(s, area));
 			TimelineRecorder.start(recordingA[0]);
 			return info.id();
 		});
@@ -75,6 +81,7 @@ public final class TimelineRunner {
 		this.server.runOnServer(s -> {
 			TimelineEnv.run(s, "savestate load " + id);
 			recordingB[0] = new TimelineRecorder.Recording(scenario, env, area, recordingA[0].baseGameTime);
+			recordingB[0].server.put(0, Probes.captureServer(s, area));
 			TimelineRecorder.start(recordingB[0]);
 		});
 		this.context.waitFor(mc -> SavestateClientNetwork.restoresCompleted() > restoresBefore && recordingB[0].serverDone() && recordingB[0].clientDone(),
@@ -103,8 +110,7 @@ public final class TimelineRunner {
 	}
 
 	static List<Divergence> compare(Map<Integer, Fingerprint> a, Map<Integer, Fingerprint> b) {
-		List<Divergence> result = new ArrayList<>();
-		Set<String> reported = new HashSet<>();
+		Map<String, Map<String, Divergence>> firstByField = new java.util.LinkedHashMap<>();
 		Set<Integer> ticks = new java.util.TreeSet<>(a.keySet());
 		ticks.addAll(b.keySet());
 		for (int tick : ticks) {
@@ -116,29 +122,43 @@ public final class TimelineRunner {
 			Set<String> subjects = new LinkedHashSet<>(fa.subjects().keySet());
 			subjects.addAll(fb.subjects().keySet());
 			for (String subject : subjects) {
-				if (reported.contains(subject)) {
-					continue;
-				}
+				Map<String, Divergence> fields = firstByField.computeIfAbsent(subject, k -> new java.util.LinkedHashMap<>());
 				Map<String, String> sa = fa.subjects().get(subject);
 				Map<String, String> sb = fb.subjects().get(subject);
 				if (sa == null || sb == null) {
-					result.add(new Divergence(subject, tick, "presence", sa == null ? "absent" : "present", sb == null ? "absent" : "present"));
-					reported.add(subject);
+					fields.putIfAbsent("presence", new Divergence(subject, tick, "presence", sa == null ? "absent" : "present", sb == null ? "absent" : "present", List.of()));
 					continue;
 				}
-				Set<String> fields = new LinkedHashSet<>(sa.keySet());
-				fields.addAll(sb.keySet());
-				for (String field : fields) {
+				Set<String> names = new LinkedHashSet<>(sa.keySet());
+				names.addAll(sb.keySet());
+				for (String field : names) {
 					String va = sa.get(field);
 					String vb = sb.get(field);
 					if (!java.util.Objects.equals(va, vb)) {
-						result.add(new Divergence(subject, tick, field, va, vb));
-						reported.add(subject);
-						break;
+						fields.putIfAbsent(field, new Divergence(subject, tick, field, va, vb, List.of()));
 					}
 				}
 			}
 		}
+		List<Divergence> result = new ArrayList<>();
+		for (Map<String, Divergence> fields : firstByField.values()) {
+			if (fields.isEmpty()) {
+				continue;
+			}
+			List<Divergence> sorted = new ArrayList<>(fields.values());
+			sorted.sort(java.util.Comparator.comparingInt(Divergence::tick));
+			Divergence first = sorted.getFirst();
+			List<String> others = new ArrayList<>();
+			for (Divergence other : sorted.subList(1, sorted.size())) {
+				if (others.size() >= MAX_EXTRA_FIELDS) {
+					others.add("... " + (sorted.size() - 1 - MAX_EXTRA_FIELDS) + " more fields");
+					break;
+				}
+				others.add("tick " + other.tick() + " " + other.field() + ": A=" + clip(other.a()) + " B=" + clip(other.b()));
+			}
+			result.add(new Divergence(first.subject(), first.tick(), first.field(), first.a(), first.b(), others));
+		}
+		result.sort(java.util.Comparator.comparingInt(Divergence::tick));
 		return result;
 	}
 
@@ -164,6 +184,6 @@ public final class TimelineRunner {
 		if (value == null) {
 			return "null";
 		}
-		return value.length() > 400 ? value.substring(0, 400) + "..." : value;
+		return value.length() > 300 ? value.substring(0, 300) + "..." : value;
 	}
 }
