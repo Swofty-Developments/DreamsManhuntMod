@@ -52,6 +52,7 @@ import net.swofty.dreammanhunt.client.mixin.state.WalkAnimationStateAccessor;
 
 public final class ClientSnapshot {
 	public static final int FORMAT = 1;
+	private static boolean resuming;
 	private static final double SAME_POSITION_EPSILON = 1.0E-3;
 
 	private ClientSnapshot() {
@@ -83,6 +84,7 @@ public final class ClientSnapshot {
 		live.chat = new ArrayList<>(((ChatComponentAccessor) minecraft.gui.hud.getChat()).dm$getAllMessages());
 		live.particles = ParticleState.capture(minecraft);
 		live.overlays = OverlayState.capture(minecraft);
+		live.entityTracking = EntityTrackingState.capture(minecraft);
 		return root;
 	}
 
@@ -111,7 +113,12 @@ public final class ClientSnapshot {
 		applyRenderer(minecraft, root.getCompoundOrEmpty("renderer"));
 		applyPlayer(minecraft.player, root.getCompoundOrEmpty("player"), ops);
 		applyLevel(minecraft.level, root.getCompoundOrEmpty("level"));
-		applyEntities(minecraft, root.getListOrEmpty("entities"));
+		if (!resuming) {
+			if (live != null && live.entityTracking != null) {
+				EntityTrackingState.apply(minecraft, live.entityTracking);
+			}
+			applyEntities(minecraft, root.getListOrEmpty("entities"));
+		}
 		applyChat(minecraft, root, ops);
 		net.swofty.dreammanhunt.client.state.extra.ExtraState.apply(minecraft, root);
 		net.minecraft.client.Camera camera = minecraft.gameRenderer.mainCamera();
@@ -124,7 +131,12 @@ public final class ClientSnapshot {
 	}
 
 	public static void resume(Minecraft minecraft, CompoundTag root) {
-		apply(minecraft, root);
+		resuming = true;
+		try {
+			apply(minecraft, root);
+		} finally {
+			resuming = false;
+		}
 		PlayerMotionState.syncServer(minecraft.player);
 		applyTextures(minecraft, root.getCompoundOrEmpty("textures"));
 		for (KeyMapping key : minecraft.options.keyMappings) {

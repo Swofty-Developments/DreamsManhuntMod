@@ -42,5 +42,6 @@ final class LiveStates {
 		@Nullable List<GuiMessage> chat;
 		ParticleState.@Nullable Snapshot particles;
 		OverlayState.@Nullable Snapshot overlays;
+		EntityTrackingState.@Nullable Snapshot entityTracking;
 	}
 }
