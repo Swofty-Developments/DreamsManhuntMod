@@ -116,9 +116,9 @@ run to run; the pass/fail pattern does not.
 | Predictor vs `LegacyRandomSource` | 200,000 / 200,000 seeds identical |
 | Decoder on 120 frames with known `Hud.tickCount` | decoded pattern equals the prediction on 120/120 (min template score 1.000, min margin to the next shift 0.389) |
 | Brute force on the same frames, `[0, 2^31)` per frame | true tick among the candidates on 120/120; mean 36.9 candidates per frame; unique by itself within `[0, 2^20)` on 118/120 |
-| Line fit on the validation frames | one line through all 120 frames; offset 148 = the real `Hud.tickCount` at frame 0 |
-| **Restore** (real keys and menu) | save at recorder tick 279, resume at 330. Edited video: 52 + 59 = 111 frames, mean 37.3 candidates per frame. **One line** (uptime = frame + 278) through all 111 frames, **no break**. Across the cut the cracked uptime goes 329 -> 330 in one frame. The cracked tick equals the real `Hud.tickCount` on every frame. |
-| **Control** (tick restore skipped) | save at 450, resume at 502, same 52 + 59 frames. **Two lines**: offset 399 over frames 0..51, offset 443 over frames 52..110. **One break, exactly at the cut** (frame 52): 450 -> 495, a jump of +44 ticks where +0 was expected. |
+| Line fit on the validation frames | one line through all 120 frames; offset 147 = the real `Hud.tickCount` at frame 0 |
+| **Restore** (real keys and menu) | save at recorder tick 278, resume at 328. Edited video: 52 + 59 = 111 frames, mean 37.4 candidates per frame. **One line** (uptime = frame + 277) through all 111 frames, **no break**. Across the cut the cracked uptime goes 328 -> 329 in one frame. The cracked tick equals the real `Hud.tickCount` on every frame. |
+| **Control** (tick restore skipped) | save at 448, resume at 500, same 52 + 59 frames. **Two lines**: offset 398 over frames 0..51, offset 442 over frames 52..110. **One break, exactly at the cut** (frame 52): 449 -> 494, +45 ticks in one frame, 44 more than the expected +1. |
 
 The decoder made no errors and no frame needed a fallback. Every frame of both edited videos
 decoded with full confidence and showed a food jolt plus the low-HP heart shake.
@@ -133,10 +133,10 @@ The plots are in `build/run/clientGameTest/screenshots/forensic/`:
 
 The test also cracks the frames the editor removed that still show the saved HUD:
 
-- The frames rendered after the save but before the mutation reach the server crack to 330 and 331.
-  The game just kept running.
+- The frames rendered after the save but before the mutation reaches the client crack to the
+  following ticks (329 in the restore run; 450 and 451 in the control). The game just kept running.
 - The frame rendered between applying the resume and the first post-resume tick cracks to the saved
-  tick (329 in the restore run, 450 in the control). So the resume makes the client show the saved
+  tick (328 in the restore run, 449 in the control). So the resume makes the client show the saved
   tick for exactly one frame before it advances. If an editor kept that frame, the video would
   repeat a tick once. That looks the same as an ordinary frame rendered between two ticks, which
   happens in every recording above 20 fps.
@@ -183,7 +183,7 @@ It does not prove:
 ## Running it
 
 `scripts/client-gametest.sh forensic` takes about 10 minutes. Most of that is brute force:
-`2^31` candidates for each of 342 frames, about 1.5 s per frame on the 24 healthy cores while other
-clients run. A test failure prints the decoded and predicted patterns of the first frames that
+`2^31` candidates for each of 342 frames, about 1.5 s per frame on the client JVM's common
+fork-join pool. A test failure prints the decoded and predicted patterns of the first frames that
 disagree. The `[forensic]` lines in `build/run/clientGameTest/logs/latest.log` hold the numbers
 above.
