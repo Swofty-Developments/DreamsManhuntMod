@@ -111,6 +111,14 @@ A Fabric mod for Minecraft 26.3 that savestates the entire game, create your ver
 
 Both are under **Controls → DreamManhunt**.
 
+### Cut marker
+
+During a restore, every restoring client draws a solid `#00FF00` bar over the left 6% of the screen, on top of everything. It is on every frozen frame and gone on the first frame of resumed play, which matches the first frame after the save. To cut, remove everything from the first frame after the save through the last frame with the bar.
+
+With `saveMarker` on, a `#FF0000` bar of the same shape covers the 10 ticks after a save capture. Those frames fall inside the removed segment.
+
+Neither bar appears in thumbnails.
+
 ## Commands
 
 | Command | Description |
@@ -134,6 +142,20 @@ Both are under **Controls → DreamManhunt**.
 
 The singleplayer host and players with the `dreammanhunt:manage` permission can save, load and delete.
 
+`config/dreammanhunt-client.json` on each client:
+
+```json
+{
+  "cutMarker": true,
+  "saveMarker": false
+}
+```
+
+| Option | Default | Effect |
+|---|---|---|
+| `cutMarker` | `true` | Green bar while a restore is frozen |
+| `saveMarker` | `false` | Red bar for 10 ticks after a save capture |
+
 ## Requirements
 
 - Minecraft 26.3
@@ -154,6 +176,14 @@ Client gametests run headless:
 ```bash
 scripts/client-gametest.sh [smoke|clientstate|engine|e2e|audio|redteam|forensic|all]
 ```
+
+A dedicated server with five headless clients (runner, two hunters, a late joiner and a client without the mod's networking):
+
+```bash
+scripts/multiclient-test.sh
+```
+
+Results are in `build/multiclient/run-*/harness.log`.
 
 ## Documentation
 

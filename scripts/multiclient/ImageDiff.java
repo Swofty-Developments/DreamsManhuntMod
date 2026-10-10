@@ -5,9 +5,34 @@ import java.io.IOException;
 import java.util.Locale;
 
 // Usage: java ImageDiff.java <a.png> <b.png> [<a.png> <b.png> ...]
-// Prints one line per pair: DIFF|a|b|width|height|meanAbs|fractionOver16|maxChannelDelta
+//        java ImageDiff.java --green <file.png> [...]
+// Pairs print DIFF|a|b|width|height|meanAbs|fractionOver16|maxChannelDelta.
+// --green prints GREEN|file|bandFraction|restFraction: the share of pure #00FF00 pixels in the left 5% of the
+// image and in everything right of 8%.
 public final class ImageDiff {
 	public static void main(String[] args) throws IOException {
+		if (args.length > 0 && args[0].equals("--green")) {
+			for (int i = 1; i < args.length; i++) {
+				BufferedImage image = ImageIO.read(new File(args[i]));
+				int band = (int) (image.getWidth() * 0.05);
+				int restFrom = (int) (image.getWidth() * 0.08);
+				long bandHits = 0, bandTotal = 0, restHits = 0, restTotal = 0;
+				for (int y = 0; y < image.getHeight(); y++) {
+					for (int x = 0; x < image.getWidth(); x++) {
+						boolean green = (image.getRGB(x, y) & 0xFFFFFF) == 0x00FF00;
+						if (x < band) {
+							bandTotal++;
+							bandHits += green ? 1 : 0;
+						} else if (x >= restFrom) {
+							restTotal++;
+							restHits += green ? 1 : 0;
+						}
+					}
+				}
+				System.out.println(String.format(Locale.ROOT, "GREEN|%s|%.6f|%.6f", args[i], bandHits / (double) bandTotal, restHits / (double) restTotal));
+			}
+			return;
+		}
 		for (int i = 0; i + 1 < args.length; i += 2) {
 			BufferedImage a = ImageIO.read(new File(args[i]));
 			BufferedImage b = ImageIO.read(new File(args[i + 1]));

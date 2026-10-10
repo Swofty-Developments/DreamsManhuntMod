@@ -1,12 +1,16 @@
 package net.swofty.dreammanhunt.server.engine;
 
 import net.minecraft.core.UUIDUtil;
+import it.unimi.dsi.fastutil.objects.Object2LongOpenHashMap;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.levelgen.LegacyRandomSource;
 import net.swofty.dreammanhunt.mixin.server.EntityAccessor;
 import net.swofty.dreammanhunt.mixin.server.LegacyRandomSourceAccessor;
@@ -27,12 +31,15 @@ public final class EntityRuntimeRestorer {
 	}
 
 	public static void apply(Entity entity) {
+		if (!(entity.level() instanceof ServerLevel level)) {
+			return;
+		}
 		Map<UUID, CompoundTag> runtime = pending;
 		CompoundTag tag = runtime.isEmpty() ? null : runtime.remove(entity.getUUID());
 		if (tag != null) {
 			applyTag(entity, tag);
 		}
-		if (entity.getId() < 0 && entity.level() instanceof ServerLevel level) {
+		if (((EntityAccessor) entity).dreammanhunt$getRawId() < 0) {
 			int saved = tag == null ? 0 : tag.getIntOr("id", 0);
 			entity.setId(saved > 0 && !EntityIds.isLive(level.getServer(), saved) ? saved : EntityIds.allocate(level.getServer()));
 		}
@@ -50,6 +57,9 @@ public final class EntityRuntimeRestorer {
 			tag.getInt("attack_strength").ifPresent(living::dreammanhunt$setAttackStrengthTicker);
 			tag.getInt("no_action_time").ifPresent(living::dreammanhunt$setNoActionTime);
 			tag.getInt("no_jump_delay").ifPresent(living::dreammanhunt$setNoJumpDelay);
+			tag.getFloat("last_hurt").ifPresent(living::dreammanhunt$setLastHurt);
+			tag.getInt("hurt_duration").ifPresent(ticks -> ((LivingEntity) entity).hurtDuration = ticks);
+			applyUse((LivingEntity) entity, living, tag);
 		}
 		if (entity instanceof Mob mob) {
 			tag.getInt("ambient_sound_time").ifPresent(ticks -> mob.ambientSoundTime = ticks);
@@ -57,6 +67,23 @@ public final class EntityRuntimeRestorer {
 		if (entity instanceof Player player) {
 			tag.getInt("take_xp_delay").ifPresent(delay -> player.takeXpDelay = delay);
 		}
+	}
+
+	private static void applyUse(LivingEntity entity, LivingEntityAccessor accessor, CompoundTag tag) {
+		tag.getCompound("use").ifPresent(use -> {
+			InteractionHand hand = use.getBooleanOr("off_hand", false) ? InteractionHand.OFF_HAND : InteractionHand.MAIN_HAND;
+			ItemStack stack = entity.getItemInHand(hand);
+			if (stack.isEmpty()) {
+				return;
+			}
+			accessor.dreammanhunt$setUseItem(stack);
+			accessor.dreammanhunt$setUseItemRemaining(use.getIntOr("remaining", stack.getUseDuration(entity)));
+			accessor.dreammanhunt$setLivingEntityFlag(1, true);
+			accessor.dreammanhunt$setLivingEntityFlag(2, hand == InteractionHand.OFF_HAND);
+			if (stack.has(DataComponents.KINETIC_WEAPON)) {
+				accessor.dreammanhunt$setRecentKineticEnemies(new Object2LongOpenHashMap<>());
+			}
+		});
 	}
 
 	static CompoundTag capture(Entity entity) {
@@ -74,6 +101,15 @@ public final class EntityRuntimeRestorer {
 			tag.putInt("attack_strength", living.dreammanhunt$getAttackStrengthTicker());
 			tag.putInt("no_action_time", living.dreammanhunt$getNoActionTime());
 			tag.putInt("no_jump_delay", living.dreammanhunt$getNoJumpDelay());
+			tag.putFloat("last_hurt", living.dreammanhunt$getLastHurt());
+			tag.putInt("hurt_duration", ((LivingEntity) entity).hurtDuration);
+			LivingEntity livingEntity = (LivingEntity) entity;
+			if (livingEntity.isUsingItem()) {
+				CompoundTag use = new CompoundTag();
+				use.putBoolean("off_hand", livingEntity.getUsedItemHand() == InteractionHand.OFF_HAND);
+				use.putInt("remaining", living.dreammanhunt$getUseItemRemaining());
+				tag.put("use", use);
+			}
 		}
 		if (entity instanceof Mob mob) {
 			tag.putInt("ambient_sound_time", mob.ambientSoundTime);

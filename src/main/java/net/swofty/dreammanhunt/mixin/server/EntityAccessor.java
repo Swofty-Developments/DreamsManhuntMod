@@ -10,6 +10,9 @@ public interface EntityAccessor {
 	@Accessor("random")
 	RandomSource dreammanhunt$getRandom();
 
+	@Accessor("id")
+	int dreammanhunt$getRawId();
+
 	@Accessor("invulnerableTime")
 	int dreammanhunt$getInvulnerableTime();
 
