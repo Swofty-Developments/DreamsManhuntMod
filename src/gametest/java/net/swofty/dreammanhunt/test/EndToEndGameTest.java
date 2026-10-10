@@ -40,9 +40,11 @@ import net.swofty.dreammanhunt.server.engine.SavestateEngine;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Field;
+import java.net.ServerSocket;
 import java.nio.file.Files;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -71,7 +73,7 @@ public final class EndToEndGameTest implements FabricClientGameTest {
 			barrierTimesOut(context, singleplayer.getServer(), id);
 		}
 
-		try (TestDedicatedServerContext server = context.worldBuilder().createServer()) {
+		try (TestDedicatedServerContext server = context.worldBuilder().createServer(serverProperties())) {
 			String id;
 			try (TestDedicatedServerConnection connection = server.connect()) {
 				connection.waitForChunksRender();
@@ -95,6 +97,16 @@ public final class EndToEndGameTest implements FabricClientGameTest {
 					"ticking should resume after the participant left");
 			SavestateClientNetwork.setReadySuppressedForTesting(false);
 		}
+	}
+
+	private static Properties serverProperties() {
+		Properties properties = new Properties();
+		try (ServerSocket socket = new ServerSocket(0)) {
+			properties.setProperty("server-port", Integer.toString(socket.getLocalPort()));
+		} catch (IOException e) {
+			throw new AssertionError("no free port for the dedicated server", e);
+		}
+		return properties;
 	}
 
 	private static void installListeners() {
@@ -365,14 +377,18 @@ public final class EndToEndGameTest implements FabricClientGameTest {
 		context.waitTicks(20);
 		check(serverIds(server).equals(before), "a player without permission must not be able to save");
 
+		SavestateMenuScreen menu = openMenu(context);
+		check(!menu.canManage(), "menu must be read-only without permission");
+		check(menu.list() != null && menu.list().children().size() == before.size(), "menu should list what the server has");
+		clearToasts(context);
+		context.takeScreenshot("e2e-dedicated-read-only-empty");
+
 		server.runCommand("savestate list");
 		server.runCommand("savestate save Console state");
 		Set<String> after = serverIds(server);
 		check(after.size() == before.size() + 1, "console save should work");
-
-		SavestateMenuScreen menu = openMenu(context);
-		context.waitFor(mc -> SavestateClientNetwork.states() != null && SavestateClientNetwork.states().size() == after.size(), 200);
-		check(!menu.canManage(), "menu must be read-only without permission");
+		context.waitFor(mc -> mc.gui.screen() instanceof SavestateMenuScreen open && open.list() != null
+				&& open.list().children().size() == after.size(), 200);
 		context.waitTicks(5);
 		clearToasts(context);
 		context.takeScreenshot("e2e-dedicated-read-only");
