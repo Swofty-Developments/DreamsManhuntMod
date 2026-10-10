@@ -1,0 +1,42 @@
+name: Release
+
+# Releases are created by hand; publishing one builds the jars and the server and
+# Prism bundles at the release tag and attaches them to it.
+on:
+  release:
+    types: [published]
+  # To re-attach the assets of a release whose run failed.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The release tag to build, for example v1.0.0
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  assets:
+    name: Build and attach release assets
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag || github.event.release.tag_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Package
+        run: scripts/package-release.sh "${TAG#v}"
+
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" build/release/* --clobber
