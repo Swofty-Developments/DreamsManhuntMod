@@ -24,6 +24,12 @@ public record SavestateConfig(boolean allowEveryone, PermissionLevel permissionL
 			Codec.intRange(1, 600).optionalFieldOf("readyTimeoutSeconds", DEFAULT.readyTimeoutSeconds).forGetter(SavestateConfig::readyTimeoutSeconds)
 	).apply(instance, SavestateConfig::new));
 
+	private static final Codec<SavestateConfig> FULL_CODEC = RecordCodecBuilder.create(instance -> instance.group(
+			Codec.BOOL.fieldOf("allowEveryone").forGetter(SavestateConfig::allowEveryone),
+			PermissionLevel.CODEC.fieldOf("permissionLevel").forGetter(SavestateConfig::permissionLevel),
+			Codec.INT.fieldOf("readyTimeoutSeconds").forGetter(SavestateConfig::readyTimeoutSeconds)
+	).apply(instance, SavestateConfig::new));
+
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 	private static volatile SavestateConfig current = DEFAULT;
 
@@ -59,7 +65,7 @@ public record SavestateConfig(boolean allowEveryone, PermissionLevel permissionL
 
 	private static void write(Path path, SavestateConfig config) {
 		try {
-			JsonElement json = CODEC.encodeStart(JsonOps.INSTANCE, config).getOrThrow();
+			JsonElement json = FULL_CODEC.encodeStart(JsonOps.INSTANCE, config).getOrThrow();
 			Files.createDirectories(path.getParent());
 			Files.writeString(path, GSON.toJson(json));
 		} catch (IOException | RuntimeException e) {
