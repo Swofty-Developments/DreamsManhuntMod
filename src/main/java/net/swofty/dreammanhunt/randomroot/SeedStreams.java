@@ -129,6 +129,10 @@ public final class SeedStreams {
 		private Stream() {
 		}
 
+		public long salt() {
+			return this.salt;
+		}
+
 		@Nullable Long next() {
 			UUID uuid = this.pendingUuid;
 			if (uuid != null) {
@@ -197,7 +201,7 @@ public final class SeedStreams {
 			}
 		}
 
-		private static long mix(long z) {
+		public static long mix(long z) {
 			z = (z ^ z >>> 30) * 0xBF58476D1CE4E5B9L;
 			z = (z ^ z >>> 27) * 0x94D049BB133111EBL;
 			return z ^ z >>> 31;

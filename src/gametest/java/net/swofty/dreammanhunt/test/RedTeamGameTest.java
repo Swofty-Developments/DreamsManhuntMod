@@ -589,16 +589,42 @@ public final class RedTeamGameTest implements FabricClientGameTest {
 				throw new AssertionError(prefix + ": ran past hud tick " + target + " (at " + hud + ")");
 			}
 			long fontSeed = context.computeOnClient(RedTeamGameTest::fontSeed);
-			if (offset == 0 && net.swofty.dreammanhunt.randomroot.SeedStreams.DEBUG) {
+			if (net.swofty.dreammanhunt.randomroot.SeedStreams.DEBUG) {
 				List<String> used = context.computeOnClient(mc -> new ArrayList<>(net.swofty.dreammanhunt.randomroot.SeedStreams.CLIENT.debug));
-				System.out.printf("[redteam-debug] %s stream draws before t0: %d%n", prefix, used.size());
+				String pos = context.computeOnClient(mc -> String.format(Locale.ROOT, "%.5f %.5f %.5f / %.5f %.5f %.5f", mc.player.getX(), mc.player.getY(), mc.player.getZ(),
+					mc.gameRenderer.mainCamera().position().x, mc.gameRenderer.mainCamera().position().y, mc.gameRenderer.mainCamera().position().z));
+				String rngs = context.computeOnClient(mc -> "level " + seedOf(net.minecraft.world.level.Level.class, "random", mc.level)
+					+ " particles " + seedOf(net.minecraft.client.particle.ParticleEngine.class, "random", mc.particleEngine)
+					+ " count " + mc.particleEngine.countParticles()
+					+ " clientGameTime " + mc.level.getGameTime() + " rain " + mc.level.getRainLevel(1.0F));
+				System.out.printf("[redteam-debug] %s t%d stream draws %d, player/camera %s, rng %s%n", prefix, offset, used.size(), pos, rngs);
 				for (int i = 0; i < used.size(); i++) {
-					System.out.printf("[redteam-debug] %s draw %d %s%n", prefix, i, used.get(i));
+					System.out.printf("[redteam-debug] %s t%d draw %d %s%n", prefix, offset, i, used.get(i));
 				}
 			}
 			shots.add(context.takeScreenshot(prefix + "-t" + offset));
 			System.out.printf("[redteam-debug] %s t%d font seed %d -> %d, partial tick %.4f%n", prefix, offset, fontSeed, context.computeOnClient(RedTeamGameTest::fontSeed),
 				context.computeOnClient(mc -> mc.getDeltaTracker().getGameTimeDeltaPartialTick(true)));
+		}
+	}
+
+	private static String seedOf(Class<?> owner, String name, Object target) {
+		try {
+			java.lang.reflect.Field field = owner.getDeclaredField(name);
+			field.setAccessible(true);
+			Object random = field.get(target);
+			for (Class<?> type = random.getClass(); type != null; type = type.getSuperclass()) {
+				for (java.lang.reflect.Field f : type.getDeclaredFields()) {
+					if (f.getName().equals("seed")) {
+						f.setAccessible(true);
+						Object v = f.get(random);
+						return String.valueOf(v instanceof java.util.concurrent.atomic.AtomicLong a ? a.get() : v);
+					}
+				}
+			}
+			return random.getClass().getSimpleName();
+		} catch (ReflectiveOperationException e) {
+			return "?";
 		}
 	}
 

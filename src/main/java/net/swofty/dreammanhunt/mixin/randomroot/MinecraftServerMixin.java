@@ -21,7 +21,7 @@ public abstract class MinecraftServerMixin {
 		SeedStreams.setServerThread(this.serverThread);
 	}
 
-	@Inject(method = "tickServer", at = @At("HEAD"))
+	@Inject(method = "tickChildren", at = @At("HEAD"))
 	private void dm$applyScheduledStream(BooleanSupplier haveTime, CallbackInfo ci) {
 		SeedStreams.onServerTickStart(((MinecraftServer) (Object) this).tickRateManager().isFrozen());
 	}
