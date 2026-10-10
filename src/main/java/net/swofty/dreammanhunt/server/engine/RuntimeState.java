@@ -108,6 +108,7 @@ final class RuntimeState {
 			}
 		}
 		tag.put("levels", levels);
+		tag.put("block_entities", BlockEntityRuntime.capture(server));
 		ListTag players = new ListTag();
 		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
 			players.add(PlayerRuntime.capture(player));
@@ -196,6 +197,7 @@ final class RuntimeState {
 			}
 		}
 		EntityRuntimeRestorer.arm(runtime);
+		BlockEntityRuntime.arm(this.tag.getListOrEmpty("block_entities"));
 	}
 
 	Map<UUID, CompoundTag> playerRuntime() {

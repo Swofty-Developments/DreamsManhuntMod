@@ -2,11 +2,17 @@ package net.swofty.dreammanhunt.mixin.server;
 
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.TickingBlockEntity;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 
+import java.util.List;
+
 @Mixin(Level.class)
 public interface LevelAccessor {
+	@Accessor("blockEntityTickers")
+	List<TickingBlockEntity> dreammanhunt$getBlockEntityTickers();
+
 	@Accessor("random")
 	RandomSource dreammanhunt$getRandom();
 
