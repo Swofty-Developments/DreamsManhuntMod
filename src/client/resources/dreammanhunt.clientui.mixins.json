@@ -3,7 +3,8 @@
 	"package": "net.swofty.dreammanhunt.client.mixin.ui",
 	"compatibilityLevel": "JAVA_25",
 	"client": [
-		"GameRendererMixin"
+		"GameRendererMixin",
+		"IntegratedServerMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1
