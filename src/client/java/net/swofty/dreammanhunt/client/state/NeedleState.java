@@ -59,6 +59,7 @@ final class NeedleState {
 			collectNeedles(models, (key, needle) -> found.add(Map.entry(key, needle)));
 			cachedNeedles = found;
 			cachedModels = models;
+			com.mojang.logging.LogUtils.getLogger().info("Tracking {} needle properties: {}", found.size(), found.stream().map(e -> e.getKey() + "=" + e.getValue().getClass().getSimpleName()).toList());
 		}
 		for (Map.Entry<String, NeedleDirectionHelper> entry : cachedNeedles) {
 			visitor.visit(entry.getKey(), entry.getValue());
@@ -93,6 +94,9 @@ final class NeedleState {
 					children.addAll(collection);
 				} else if (current instanceof Map<?, ?> map) {
 					children.addAll(map.values());
+					if (current instanceof it.unimi.dsi.fastutil.objects.Object2ObjectFunction<?, ?> function) {
+						children.add(function.defaultReturnValue());
+					}
 				} else if (current.getClass().getName().startsWith("net.minecraft.client.renderer.item")) {
 					for (Field field : Reflect.instanceFields(current.getClass())) {
 						if (field.getType().isPrimitive()) {

@@ -133,6 +133,12 @@ public final class ClientSnapshot {
 	}
 
 	public static void applyBarrierTiming(Minecraft minecraft, CompoundTag root) {
+		LiveStates.Live live = LiveStates.get(root);
+		if (live != null && live.overlays != null) {
+			OverlayState.apply(minecraft, live.overlays);
+		} else {
+			minecraft.gui.toastManager().clear();
+		}
 		applyTextures(minecraft, root.getCompoundOrEmpty("textures"));
 		CompoundTag timing = root.getCompoundOrEmpty("timing");
 		applyTiming(minecraft, timing);
