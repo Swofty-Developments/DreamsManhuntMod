@@ -18,6 +18,8 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntitySpawnReason;
+import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -29,6 +31,8 @@ import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraft.world.scores.DisplaySlot;
 import net.minecraft.world.scores.Objective;
 import net.minecraft.world.scores.ScoreHolder;
+import net.swofty.dreammanhunt.mixin.server.LevelAccessor;
+import net.swofty.dreammanhunt.mixin.server.ServerLevelAccessor;
 import net.swofty.dreammanhunt.server.engine.SavestateEngine;
 import net.swofty.dreammanhunt.server.engine.SavestateException;
 
@@ -107,9 +111,12 @@ public final class EngineGameTest implements FabricClientGameTest {
 		context.waitTicks(10);
 		connection.waitForChunksRender();
 
+		server.runCommand("weather rain 100000");
+		context.waitTicks(15);
 		String id = UUID.randomUUID().toString();
 		float[] savedCooldown = new float[1];
-		long[] savedRuntime = new long[5];
+		float[] savedWeather = new float[4];
+		long[] savedRuntime = new long[7];
 		long saveMillis = server.computeOnServer(s -> {
 			long start = System.nanoTime();
 			try {
@@ -123,7 +130,14 @@ public final class EngineGameTest implements FabricClientGameTest {
 			Entity pig = findNamed(s.overworld().getAllEntities(), SAVED_PIG);
 			savedRuntime[2] = pig == null ? -1 : pig.tickCount;
 			savedRuntime[3] = pig == null ? -1 : pig.getRandom().nextLong();
-			savedRuntime[4] = ((net.swofty.dreammanhunt.mixin.server.LevelAccessor) s.overworld()).dreammanhunt$getSoundSeedGenerator().nextLong();
+			LevelAccessor overworldAccess = (LevelAccessor) s.overworld();
+			savedRuntime[4] = overworldAccess.dreammanhunt$getSoundSeedGenerator().nextLong();
+			savedRuntime[5] = pig == null ? -1 : pig.getId();
+			savedRuntime[6] = ServerLevelAccessor.dreammanhunt$getEntityCounter().get();
+			savedWeather[0] = overworldAccess.dreammanhunt$getORainLevel();
+			savedWeather[1] = overworldAccess.dreammanhunt$getRainLevel();
+			savedWeather[2] = overworldAccess.dreammanhunt$getOThunderLevel();
+			savedWeather[3] = overworldAccess.dreammanhunt$getThunderLevel();
 			savedCooldown[0] = firstPlayer(s).getCooldowns().getCooldownPercent(new ItemStack(Items.ENDER_PEARL), 0.0F);
 			return elapsed;
 		});
@@ -181,11 +195,20 @@ public final class EngineGameTest implements FabricClientGameTest {
 			Entity pig = findNamed(s.overworld().getAllEntities(), SAVED_PIG);
 			check(failures, pig != null && pig.tickCount == savedRuntime[2], "pig tick count restored");
 			check(failures, pig != null && pig.getRandom().nextLong() == savedRuntime[3], "pig random restored");
-			check(failures, ((net.swofty.dreammanhunt.mixin.server.LevelAccessor) s.overworld()).dreammanhunt$getSoundSeedGenerator().nextLong() == savedRuntime[4], "overworld sound seed restored");
+			check(failures, ((LevelAccessor) s.overworld()).dreammanhunt$getSoundSeedGenerator().nextLong() == savedRuntime[4], "overworld sound seed restored");
 			ServerPlayer restored = firstPlayer(s);
 			float cooldown = restored.getCooldowns().getCooldownPercent(new ItemStack(Items.ENDER_PEARL), 0.0F);
 			check(failures, cooldown == savedCooldown[0] && cooldown > 0.0F, "server pearl cooldown restored exactly, got " + cooldown + " saved " + savedCooldown[0]);
 			check(failures, !restored.getCooldowns().isOnCooldown(new ItemStack(Items.CHORUS_FRUIT)), "server later cooldown gone");
+			check(failures, pig != null && pig.getId() == savedRuntime[5], "server pig keeps its saved entity id, got " + (pig == null ? -1 : pig.getId()) + " saved " + savedRuntime[5]);
+			check(failures, ServerLevelAccessor.dreammanhunt$getEntityCounter().get() == savedRuntime[6], "entity counter restored, got " + ServerLevelAccessor.dreammanhunt$getEntityCounter().get() + " saved " + savedRuntime[6]);
+			Entity probe = EntityTypes.ARMOR_STAND.create(s.overworld(), EntitySpawnReason.COMMAND);
+			check(failures, probe != null && probe.getId() == savedRuntime[6] + 1, "next entity gets the uncut id, got " + (probe == null ? -1 : probe.getId()) + " expected " + (savedRuntime[6] + 1));
+			LevelAccessor weather = (LevelAccessor) s.overworld();
+			check(failures, weather.dreammanhunt$getORainLevel() == savedWeather[0] && weather.dreammanhunt$getRainLevel() == savedWeather[1]
+					&& weather.dreammanhunt$getOThunderLevel() == savedWeather[2] && weather.dreammanhunt$getThunderLevel() == savedWeather[3],
+					"server weather levels restored exactly, got " + weather.dreammanhunt$getRainLevel() + " saved " + savedWeather[1]);
+			s.tickRateManager().setFrozen(true);
 			return elapsed;
 		});
 		System.out.println("[EngineGameTest] " + label + " restore took " + restoreMillis + " ms");
@@ -219,7 +242,7 @@ public final class EngineGameTest implements FabricClientGameTest {
 			check(failures, !isDone(s, player, LATER_ADVANCEMENT), "server later advancement not done");
 			long dayTime = level.getOverworldClockTime();
 			check(failures, dayTime >= savedDayTime && dayTime < savedDayTime + 200, "server time restored, got " + dayTime + " saved " + savedDayTime);
-			check(failures, !level.isRaining() && !level.isThundering(), "server weather restored");
+			check(failures, ((LevelAccessor) level).dreammanhunt$getRainLevel() == savedWeather[1] && savedWeather[1] > 0.0F && savedWeather[1] < 1.0F, "server weather still at the saved mid-transition level, got " + ((LevelAccessor) level).dreammanhunt$getRainLevel());
 			Objective objective = s.getScoreboard().getObjective("dmscore");
 			check(failures, objective != null && s.getScoreboard().getOrCreatePlayerScore(ScoreHolder.forNameOnly(player.getScoreboardName()), objective).get() == 42, "server scoreboard restored");
 			check(failures, s.getScoreboard().getObjective("dmother") == null, "server later objective gone");
@@ -252,13 +275,17 @@ public final class EngineGameTest implements FabricClientGameTest {
 			check(failures, mc.player.getFoodData().getFoodLevel() == 15, "client food restored, got " + mc.player.getFoodData().getFoodLevel());
 			check(failures, clientDone(mc, SAVED_ADVANCEMENT), "client saved advancement done");
 			check(failures, !clientDone(mc, LATER_ADVANCEMENT), "client later advancement not done");
-			check(failures, mc.level.getRainLevel(1.0F) == 0.0F, "client weather restored");
+			check(failures, ((LevelAccessor) mc.level).dreammanhunt$getRainLevel() == savedWeather[1], "client rain level restored exactly, got " + ((LevelAccessor) mc.level).dreammanhunt$getRainLevel() + " saved " + savedWeather[1]);
+			check(failures, ((LevelAccessor) mc.level).dreammanhunt$getThunderLevel() == savedWeather[3], "client thunder level restored exactly");
+			Entity clientPig = findNamed(mc.level.entitiesForRendering(), SAVED_PIG);
+			check(failures, clientPig != null && clientPig.getId() == savedRuntime[5], "client pig has its saved entity id, got " + (clientPig == null ? -1 : clientPig.getId()));
 			Objective sidebar = mc.level.getScoreboard().getDisplayObjective(DisplaySlot.SIDEBAR);
 			check(failures, sidebar != null && sidebar.getName().equals("dmscore"), "client sidebar restored");
 			long dayTime = mc.level.getOverworldClockTime();
 			check(failures, dayTime >= savedDayTime && dayTime < savedDayTime + 200, "client time restored, got " + dayTime);
 		});
 
+		server.runOnServer(s -> s.tickRateManager().setFrozen(false));
 		if (label.equals("sp") && failures.isEmpty()) {
 			this.runRollbackCheck(context, server, connection, id, playerPos.offset(1, 0, 2), failures);
 		}
