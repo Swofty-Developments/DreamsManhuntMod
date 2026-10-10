@@ -10,7 +10,6 @@
 		"ItemEntityAccessor",
 		"MinecraftThreadMixin",
 		"NeedleDirectionHelperMixin",
-		"NeedleRandomMixin",
 		"PhantomMixin",
 		"PhantomRendererMixin",
 		"WitchRendererMixin"
