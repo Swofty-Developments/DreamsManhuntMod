@@ -12,6 +12,7 @@
 			"net.swofty.dreammanhunt.test.EndToEndGameTest",
 			"net.swofty.dreammanhunt.test.AudioGameTest",
 			"net.swofty.dreammanhunt.test.RedTeamGameTest",
+			"net.swofty.dreammanhunt.test.WorldSyncGameTest",
 			"net.swofty.dreammanhunt.test.ForensicGameTest"
 		],
 		"client": [
