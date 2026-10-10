@@ -152,7 +152,8 @@ public final class RedTeamGameTest implements FabricClientGameTest {
 				}
 			}
 			env.block(0, 3, 6, "minecraft:conduit[waterlogged=true]");
-			env.tp(0, 0, 0, 0, -10);
+			env.block(-5, 4, 1, "minecraft:stone");
+			env.tp(-5, 5, 1, -45, 24);
 		}));
 		list.add(new Scene("enchanting_table", env -> {
 			env.block(1, 0, 2, "minecraft:enchanting_table");
