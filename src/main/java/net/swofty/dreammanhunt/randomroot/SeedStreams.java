@@ -115,12 +115,17 @@ public final class SeedStreams {
 			root.put("entityOrder", net.swofty.dreammanhunt.server.sync.EntityOrder.capture(current));
 			root.put("levelRandoms", net.swofty.dreammanhunt.server.sync.LevelRandoms.capture(current));
 			root.put("spawnFlags", net.swofty.dreammanhunt.server.sync.SpawnFlags.capture(current));
+			root.put("tickingChunks", net.swofty.dreammanhunt.server.sync.ChunkReadiness.capture(current));
 		}
 		tag.put("randomroot", root);
 	}
 
 	public static void applyServer(CompoundTag tag) {
 		SERVER.schedule(tag.getCompoundOrEmpty("randomroot"));
+	}
+
+	public static @Nullable CompoundTag scheduledServerState() {
+		return SERVER.scheduled;
 	}
 
 	public static void onServerTickStart(boolean frozen) {

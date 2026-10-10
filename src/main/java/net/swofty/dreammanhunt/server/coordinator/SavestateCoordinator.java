@@ -331,7 +331,7 @@ public final class SavestateCoordinator {
 		if (barrier == null || !barrier.pending.isEmpty()) {
 			return;
 		}
-		if (!this.chunksDelivered(barrier)) {
+		if (!this.chunksDelivered(barrier) || !net.swofty.dreammanhunt.server.sync.ChunkReadiness.ready(this.server)) {
 			if (!barrier.waitingForChunks) {
 				barrier.waitingForChunks = true;
 				DreamManhunt.LOGGER.info("Restore {} barrier: everyone is ready, waiting for chunk delivery", barrier.id);

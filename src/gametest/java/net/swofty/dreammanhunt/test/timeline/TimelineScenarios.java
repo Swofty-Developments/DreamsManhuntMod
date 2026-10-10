@@ -49,6 +49,7 @@ public final class TimelineScenarios {
 			env.summon("minecraft:bee", 2, 2, 4, "");
 			env.summon("minecraft:bee", -2, 2, 5, "");
 		}).settle(30));
+		list.addAll(WorldSyncScenarios.all());
 		return list;
 	}
 }
