@@ -1,0 +1,39 @@
+{
+	"schemaVersion": 1,
+	"id": "dreammanhunt",
+	"version": "${version}",
+	"name": "DreamManhunt",
+	"description": "Full-fidelity savestates for client and server: save the whole game, open the menu, and continue from any saved moment.",
+	"authors": [
+		"Swofty"
+	],
+	"license": "MIT",
+	"icon": "assets/dreammanhunt/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"net.swofty.dreammanhunt.DreamManhunt"
+		],
+		"client": [
+			"net.swofty.dreammanhunt.client.DreamManhuntClient"
+		]
+	},
+	"mixins": [
+		"dreammanhunt.server.mixins.json",
+		"dreammanhunt.common.mixins.json",
+		{
+			"config": "dreammanhunt.client.mixins.json",
+			"environment": "client"
+		},
+		{
+			"config": "dreammanhunt.clientui.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.19.5",
+		"minecraft": "~26.3",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}

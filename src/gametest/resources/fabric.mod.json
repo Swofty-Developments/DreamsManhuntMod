@@ -1,0 +1,18 @@
+{
+	"schemaVersion": 1,
+	"id": "dreammanhunt-test",
+	"version": "1.0.0",
+	"name": "DreamManhunt Tests",
+	"environment": "*",
+	"entrypoints": {
+		"fabric-client-gametest": [
+			"net.swofty.dreammanhunt.test.SmokeClientGameTest",
+			"net.swofty.dreammanhunt.test.ClientStateGameTest",
+			"net.swofty.dreammanhunt.test.EngineGameTest",
+			"net.swofty.dreammanhunt.test.EndToEndGameTest"
+		]
+	},
+	"depends": {
+		"dreammanhunt": "*"
+	}
+}
