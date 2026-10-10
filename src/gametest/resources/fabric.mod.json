@@ -12,7 +12,8 @@
 			"net.swofty.dreammanhunt.test.EndToEndGameTest",
 			"net.swofty.dreammanhunt.test.AudioGameTest",
 			"net.swofty.dreammanhunt.test.RedTeamGameTest",
-			"net.swofty.dreammanhunt.test.ForensicGameTest"
+			"net.swofty.dreammanhunt.test.ForensicGameTest",
+			"net.swofty.dreammanhunt.test.MiningGameTest"
 		],
 		"client": [
 			"net.swofty.dreammanhunt.test.multiclient.MultiClientDriver"
