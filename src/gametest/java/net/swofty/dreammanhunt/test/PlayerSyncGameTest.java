@@ -168,6 +168,8 @@ public final class PlayerSyncGameTest implements FabricClientGameTest {
 		});
 		context.waitFor(mc -> mc.gui.screen() instanceof AbstractContainerScreen<?>, 100);
 		context.waitTicks(15);
+		int savedId = server.computeOnServer(s -> player(s).containerMenu.containerId);
+		int savedState = server.computeOnServer(s -> player(s).containerMenu.getStateId());
 		String id = save(server, "chest");
 		server.runOnServer(s -> player(s).closeContainer());
 		context.waitFor(mc -> mc.gui.screen() == null, 100);
@@ -187,6 +189,7 @@ public final class PlayerSyncGameTest implements FabricClientGameTest {
 				serverChest, serverId, serverState, clientScreen, clientId, clientState, openers);
 		check(serverChest && clientScreen, "the chest that was open at the save is open again on both sides");
 		check(serverId == clientId && serverState == clientState, "container id and state id agree after the restore");
+		check(serverId == savedId && serverState == savedState, "container id and state id match the save (" + savedId + "/" + savedState + " -> " + serverId + "/" + serverState + ")");
 		check(openers == 1, "the chest has one opener after the restore");
 		context.runOnClient(mc -> mc.gameMode.handleContainerInput(clientId, 0, 0, ContainerInput.PICKUP, mc.player));
 		context.waitTicks(5);
