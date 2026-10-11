@@ -9,7 +9,7 @@ import net.minecraft.world.phys.AABB;
 
 import java.util.function.Consumer;
 
-public record TimelineScenario(String name, int ticks, int settleTicks, Consumer<TimelineEnv> setup, Inputs inputs) {
+public record TimelineScenario(String name, int ticks, int settleTicks, Consumer<TimelineEnv> setup, Inputs inputs, ResourceKey<Level> dimension, BlockPos center, int radius) {
 	public interface Inputs {
 		void apply(MinecraftServer server, TimelineEnv env, int tick);
 	}
@@ -22,14 +22,22 @@ public record TimelineScenario(String name, int ticks, int settleTicks, Consumer
 
 	public static TimelineScenario of(String name, int ticks, Consumer<TimelineEnv> setup) {
 		return new TimelineScenario(name, ticks, 20, setup, (server, env, tick) -> {
-		});
+		}, null, null, 24);
 	}
 
 	public TimelineScenario settle(int ticks) {
-		return new TimelineScenario(this.name, this.ticks, ticks, this.setup, this.inputs);
+		return new TimelineScenario(this.name, this.ticks, ticks, this.setup, this.inputs, this.dimension, this.center, this.radius);
 	}
 
 	public TimelineScenario inputs(Inputs inputs) {
-		return new TimelineScenario(this.name, this.ticks, this.settleTicks, this.setup, inputs);
+		return new TimelineScenario(this.name, this.ticks, this.settleTicks, this.setup, inputs, this.dimension, this.center, this.radius);
+	}
+
+	public TimelineScenario area(ResourceKey<Level> dimension, BlockPos center, int radius) {
+		return new TimelineScenario(this.name, this.ticks, this.settleTicks, this.setup, this.inputs, dimension, center, radius);
+	}
+
+	public TimelineScenario radius(int radius) {
+		return new TimelineScenario(this.name, this.ticks, this.settleTicks, this.setup, this.inputs, this.dimension, this.center, radius);
 	}
 }

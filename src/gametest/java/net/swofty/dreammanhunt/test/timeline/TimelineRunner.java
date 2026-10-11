@@ -57,7 +57,10 @@ public final class TimelineRunner {
 
 	public Result run(TimelineScenario scenario, int radius) {
 		TimelineEnv env = new TimelineEnv(this.context, this.server, this.origin);
-		TimelineScenario.Area area = new TimelineScenario.Area(Level.OVERWORLD, this.origin.offset(-radius, -8, -radius), this.origin.offset(radius, 24, radius));
+		int areaRadius = scenario.radius();
+		BlockPos center = scenario.center() == null ? this.origin : scenario.center();
+		TimelineScenario.Area area = new TimelineScenario.Area(scenario.dimension() == null ? Level.OVERWORLD : scenario.dimension(),
+				center.offset(-areaRadius, -Math.max(8, areaRadius / 2), -areaRadius), center.offset(areaRadius, Math.max(24, areaRadius), areaRadius));
 		this.prepare(env, radius);
 		scenario.setup().accept(env);
 		this.context.waitTicks(scenario.settleTicks());
