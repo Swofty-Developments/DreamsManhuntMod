@@ -102,6 +102,7 @@ public final class TimelineRecorder {
 		currentTick = tick;
 		recording.server.put(tick, Probes.captureServer(server, recording.area));
 		RngTrace.setTick(tick + 1);
+		RngTrace.registerEntities(server, recording.area);
 		recording.scenario.inputs().apply(server, recording.env, tick);
 	}
 

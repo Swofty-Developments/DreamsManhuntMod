@@ -77,7 +77,7 @@ public final class TimelineRunner {
 			TimelineRecorder.setCurrentTick(0);
 			recordingA[0].server.put(0, Probes.captureServer(s, area));
 			if (TRACE_RANGE != null) {
-				traceA[0] = RngTrace.start(s, TRACE_RANGE[0], TRACE_RANGE[1]);
+				traceA[0] = RngTrace.start(s, TRACE_RANGE[0], TRACE_RANGE[1], area);
 			}
 			TimelineRecorder.start(recordingA[0]);
 			return info.id();
@@ -95,7 +95,7 @@ public final class TimelineRunner {
 			TimelineRecorder.setCurrentTick(0);
 			recordingB[0].server.put(0, Probes.captureServer(s, area));
 			if (TRACE_RANGE != null) {
-				traceB[0] = RngTrace.start(s, TRACE_RANGE[0], TRACE_RANGE[1]);
+				traceB[0] = RngTrace.start(s, TRACE_RANGE[0], TRACE_RANGE[1], area);
 			}
 			TimelineRecorder.start(recordingB[0]);
 		});

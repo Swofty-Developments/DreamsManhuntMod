@@ -59,14 +59,29 @@ public final class RngTrace {
 		calls.add(new Call(trace.tick, calls.size(), bits, value, stack()));
 	}
 
-	static Trace start(MinecraftServer server, int from, int to) {
+	static Trace start(MinecraftServer server, int from, int to, TimelineScenario.Area area) {
 		Trace trace = new Trace(from, to);
 		for (ServerLevel level : server.getAllLevels()) {
 			trace.sources.put(((LevelAccessor) level).dreammanhunt$getRandom(), level.dimension().identifier().getPath());
 		}
 		trace.tick = 1;
 		current = trace;
+		registerEntities(server, area);
 		return trace;
+	}
+
+	static void registerEntities(MinecraftServer server, TimelineScenario.Area area) {
+		Trace trace = current;
+		if (trace == null) {
+			return;
+		}
+		for (ServerLevel level : server.getAllLevels()) {
+			for (net.minecraft.world.entity.Entity entity : level.getAllEntities()) {
+				if (area.contains(entity)) {
+					trace.sources.putIfAbsent(entity.getRandom(), "entity:" + Probes.entityKey(entity));
+				}
+			}
+		}
 	}
 
 	static void setTick(int tick) {

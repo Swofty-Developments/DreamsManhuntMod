@@ -109,6 +109,7 @@ final class RuntimeState {
 		}
 		tag.put("levels", levels);
 		tag.put("block_entities", BlockEntityRuntime.capture(server));
+		tag.put("section_order", SectionOrder.capture(server));
 		ListTag players = new ListTag();
 		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
 			players.add(PlayerRuntime.capture(player));
@@ -145,6 +146,12 @@ final class RuntimeState {
 	void applyServerCounters(MinecraftServer server) {
 		net.swofty.dreammanhunt.randomroot.SeedStreams.applyServer(this.tag);
 		((MinecraftServerAccessor) server).dreammanhunt$setTickCount(this.tag.getIntOr("server_tick_count", server.getTickCount()));
+	}
+
+	void armSectionOrder(MinecraftServer server) {
+		SectionOrder.register();
+		SectionOrder.arm(this.tag.getCompoundOrEmpty("section_order"));
+		SectionOrder.applyNow(server);
 	}
 
 	void resolveAiReferences() {
