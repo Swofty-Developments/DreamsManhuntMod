@@ -379,7 +379,7 @@ The scenes are:
 | `mobs` | 18 cows, sheep and chickens wandering in a pen |
 | `spawning` | Night, difficulty normal, natural monster spawning over a stone plain |
 
-Final run on this branch (main `63fbc62`, which includes the mining fix and the engine's mob AI restore, plus the fixes below): every scene matches on every tick.
+Final run on this branch merged with main `2a0dbed` (mining fix, mob AI restore, entity tracking), plus the fixes below: every scene matches on every tick.
 
 | Scene | Before | After |
 |---|---|---|
