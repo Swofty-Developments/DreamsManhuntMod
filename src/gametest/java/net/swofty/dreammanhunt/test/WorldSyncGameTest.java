@@ -237,7 +237,7 @@ public final class WorldSyncGameTest implements FabricClientGameTest {
 		List<Long> tickingKeys = new ArrayList<>();
 		level.getChunkSource().chunkMap.forEachBlockTickingChunk(chunk -> tickingKeys.add(chunk.getPos().pack()));
 		tickingKeys.sort(null);
-		out.add("G loaded=" + level.getChunkSource().getLoadedChunksCount() + " ticking=" + ticking[0] + " tickingHash=" + tickingKeys.hashCode()
+		out.add("G ticking=" + ticking[0] + " tickingHash=" + tickingKeys.hashCode()
 			+ " entities=" + level.getAllEntities().spliterator().getExactSizeIfKnown() + " rng=" + rngSeed(level));
 		for (int cx = (o.getX() - r) >> 4; cx <= (o.getX() + r) >> 4; cx++) {
 			for (int cz = (o.getZ() - r) >> 4; cz <= (o.getZ() + r) >> 4; cz++) {
@@ -258,6 +258,22 @@ public final class WorldSyncGameTest implements FabricClientGameTest {
 			}
 		}
 		return out;
+	}
+
+	private static void waitForStableTicking(TestServerContext server) {
+		int[] last = {-1};
+		int[] stable = {0};
+		server.waitFor(s -> {
+			int[] count = new int[1];
+			s.overworld().getChunkSource().chunkMap.forEachBlockTickingChunk(chunk -> count[0]++);
+			if (count[0] == last[0]) {
+				stable[0]++;
+			} else {
+				stable[0] = 0;
+				last[0] = count[0];
+			}
+			return stable[0] >= 40;
+		}, 1200);
 	}
 
 	private static String rngSeed(ServerLevel level) {
@@ -298,6 +314,7 @@ public final class WorldSyncGameTest implements FabricClientGameTest {
 		context.waitTicks(5);
 		scene.setup.accept(env);
 		context.waitTicks(scene.settle);
+		waitForStableTicking(server);
 
 		Set<String> before = serverIds(server);
 		startRecording(scene, origin);
