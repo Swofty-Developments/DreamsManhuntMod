@@ -1,6 +1,5 @@
 package net.swofty.dreammanhunt.mixin.common;
 
-import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.ContainerUser;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.ShulkerBoxBlockEntity;
@@ -37,7 +36,5 @@ public abstract class ShulkerBoxBlockEntityMixin {
 		this.animationStatus = ShulkerBoxBlockEntity.AnimationStatus.OPENED;
 		this.progress = 1.0F;
 		this.progressOld = 1.0F;
-		BlockPos pos = self.getBlockPos();
-		level.blockEvent(pos, self.getBlockState().getBlock(), 1, this.openCount);
 	}
 }

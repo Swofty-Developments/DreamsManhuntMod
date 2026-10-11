@@ -8,6 +8,8 @@ import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.nbt.Tag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundOpenScreenPacket;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.RegistryOps;
 import net.minecraft.server.MinecraftServer;
@@ -28,10 +30,12 @@ import net.minecraft.world.level.block.Portal;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.storage.LevelResource;
 import net.swofty.dreammanhunt.DreamManhunt;
+import net.swofty.dreammanhunt.mixin.common.AbstractContainerMenuSyncAccessor;
 import net.swofty.dreammanhunt.mixin.common.CompoundContainerAccessor;
 import net.swofty.dreammanhunt.mixin.common.LivingEntitySyncAccessor;
 import net.swofty.dreammanhunt.mixin.common.PortalProcessorAccessor;
 import net.swofty.dreammanhunt.mixin.common.ServerGamePacketListenerSyncAccessor;
+import net.swofty.dreammanhunt.mixin.common.ServerPlayerSyncAccessor;
 import org.jspecify.annotations.Nullable;
 
 import java.io.IOException;
@@ -40,11 +44,13 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.WeakHashMap;
 
 public final class PlayerSync {
 	private static final String FILE = "player_sync.nbt";
 	private static final int SPIN_ATTACK_FLAG = 4;
 	private static boolean reopening;
+	private static final Map<ServerPlayer, Component> TITLES = new WeakHashMap<>();
 
 	private PlayerSync() {
 	}
@@ -67,6 +73,7 @@ public final class PlayerSync {
 
 	public static CompoundTag capture(ServerPlayer player) {
 		CompoundTag tag = new CompoundTag();
+		tag.put("fields", PlayerFields.capture(player));
 		Input input = player.getLastClientInput();
 		CompoundTag inputTag = new CompoundTag();
 		inputTag.putBoolean("forward", input.forward());
@@ -115,9 +122,13 @@ public final class PlayerSync {
 			tag.store("camera", UUIDUtil.CODEC, camera.getUUID());
 		}
 
+		tag.putInt("container_counter", ((ServerPlayerSyncAccessor) player).dreammanhunt$sync$getContainerCounter());
+		tag.putInt("inventory_state", player.inventoryMenu.getStateId());
 		BlockPos container = containerPos(player.containerMenu, player);
 		if (container != null) {
 			tag.store("container", BlockPos.CODEC, container);
+			tag.putInt("container_id", player.containerMenu.containerId);
+			tag.putInt("container_state", player.containerMenu.getStateId());
 		}
 
 		ServerGamePacketListenerSyncAccessor connection = (ServerGamePacketListenerSyncAccessor) player.connection;
@@ -146,6 +157,7 @@ public final class PlayerSync {
 	}
 
 	public static void apply(ServerPlayer player, CompoundTag tag) {
+		tag.getCompound("fields").ifPresent(fields -> PlayerFields.apply(player, fields));
 		tag.getCompound("input").ifPresent(input -> player.setLastClientInput(new Input(
 				input.getBooleanOr("forward", false),
 				input.getBooleanOr("backward", false),
@@ -185,6 +197,13 @@ public final class PlayerSync {
 			}
 		});
 
+		((ServerPlayerSyncAccessor) player).dreammanhunt$sync$setContainerCounter(tag.getIntOr("container_counter", 0));
+		int inventoryState = tag.getIntOr("inventory_state", -1);
+		if (inventoryState > 0) {
+			((AbstractContainerMenuSyncAccessor) player.inventoryMenu).dreammanhunt$sync$setStateId(inventoryState - 1);
+			player.inventoryMenu.sendAllDataToRemote();
+		}
+
 		ServerGamePacketListenerSyncAccessor connection = (ServerGamePacketListenerSyncAccessor) player.connection;
 		connection.dreammanhunt$sync$setClientIsFloating(tag.getBooleanOr("client_floating", false));
 		connection.dreammanhunt$sync$setAboveGroundTickCount(tag.getIntOr("above_ground_ticks", 0));
@@ -201,6 +220,17 @@ public final class PlayerSync {
 		});
 	}
 
+	static void resendContainer(ServerPlayer player) {
+		AbstractContainerMenu menu = player.containerMenu;
+		Component title = TITLES.remove(player);
+		if (menu == player.inventoryMenu || title == null) {
+			return;
+		}
+		player.connection.send(new ClientboundOpenScreenPacket(menu.containerId, menu.getType(), title));
+		((AbstractContainerMenuSyncAccessor) menu).dreammanhunt$sync$setStateId(menu.getStateId() - 1);
+		menu.sendAllDataToRemote();
+	}
+
 	static void reopenContainer(ServerPlayer player, CompoundTag tag) {
 		tag.read("container", BlockPos.CODEC).ifPresent(pos -> {
 			ServerLevel level = player.level();
@@ -208,11 +238,26 @@ public final class PlayerSync {
 			if (provider == null) {
 				return;
 			}
+			TITLES.put(player, provider.getDisplayName());
+			ServerPlayerSyncAccessor counter = (ServerPlayerSyncAccessor) player;
+			int next = counter.dreammanhunt$sync$getContainerCounter();
+			int savedId = tag.getIntOr("container_id", -1);
+			if (savedId > 0) {
+				counter.dreammanhunt$sync$setContainerCounter(savedId - 1);
+			}
 			reopening = true;
 			try {
 				player.openMenu(provider);
 			} finally {
 				reopening = false;
+			}
+			if (savedId > 0) {
+				counter.dreammanhunt$sync$setContainerCounter(next);
+			}
+			int savedState = tag.getIntOr("container_state", -1);
+			if (savedState > 0 && player.containerMenu != player.inventoryMenu) {
+				((AbstractContainerMenuSyncAccessor) player.containerMenu).dreammanhunt$sync$setStateId(savedState - 1);
+				player.containerMenu.sendAllDataToRemote();
 			}
 		});
 	}

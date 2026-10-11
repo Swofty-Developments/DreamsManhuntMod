@@ -30,4 +30,13 @@ public abstract class ContainerOpenersCounterMixin {
 			original.call(level, entity, event, pos);
 		}
 	}
+
+	@WrapOperation(method = "incrementOpeners", at = @At(value = "INVOKE",
+			target = "Lnet/minecraft/world/level/block/entity/ContainerOpenersCounter;openerCountChanged(Lnet/minecraft/world/level/Level;Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;II)V"))
+	private void dreammanhunt$noBlockEventOnReopen(ContainerOpenersCounter counter, Level level, BlockPos pos, BlockState state, int previous, int current,
+			Operation<Void> original) {
+		if (!PlayerSync.isReopening()) {
+			original.call(counter, level, pos, state, previous, current);
+		}
+	}
 }

@@ -245,6 +245,7 @@ public final class SavestateCoordinator {
 				CompoundTag sync = savedSync.getOrDefault(player.getUUID(), liveSync.get(player.getUUID()));
 				if (sync != null) {
 					PlayerSync.apply(player, sync);
+					PlayerSync.reopenContainer(player, sync);
 					appliedSync.put(player.getUUID(), sync);
 				}
 			}
@@ -383,7 +384,7 @@ public final class SavestateCoordinator {
 		barrier.reopen.forEach((uuid, sync) -> {
 			ServerPlayer player = this.server.getPlayerList().getPlayer(uuid);
 			if (player != null) {
-				PlayerSync.reopenContainer(player, sync);
+				PlayerSync.resendContainer(player);
 			}
 		});
 		this.busy = false;
