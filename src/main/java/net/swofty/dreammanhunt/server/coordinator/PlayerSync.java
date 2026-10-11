@@ -21,7 +21,15 @@ import net.minecraft.world.MenuProvider;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.PortalProcessor;
+import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.player.Input;
+import net.minecraft.world.level.levelgen.LegacyRandomSource;
+import net.minecraft.world.phys.Vec3;
+import net.swofty.dreammanhunt.mixin.server.LegacyRandomSourceAccessor;
+import net.swofty.dreammanhunt.mixin.common.EntityRandomAccessor;
+import net.swofty.dreammanhunt.mixin.common.FishingHookAccessor;
+import net.minecraft.world.entity.projectile.FishingHook;
+import net.minecraft.world.level.entity.EntityTypeTest;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
@@ -42,6 +50,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.WeakHashMap;
@@ -115,6 +124,27 @@ public final class PlayerSync {
 				portalTag.putBoolean("inside", portal.isInsidePortalThisTick());
 				tag.put("portal", portalTag);
 			}
+		}
+
+		FishingHook fishing = player.fishing;
+		if (fishing != null && !fishing.isRemoved()) {
+			CompoundTag hook = new CompoundTag();
+			hook.store("uuid", UUIDUtil.CODEC, fishing.getUUID());
+			hook.putInt("id", fishing.getId());
+			hook.store("pos", Vec3.CODEC, fishing.position());
+			hook.putFloat("yaw", fishing.getYRot());
+			hook.putFloat("pitch", fishing.getXRot());
+			hook.putInt("luck", ((FishingHookAccessor) fishing).dreammanhunt$getLuck());
+			hook.putInt("lure", ((FishingHookAccessor) fishing).dreammanhunt$getLureSpeed());
+			Entity hooked = fishing.getHookedIn();
+			if (hooked != null) {
+				hook.store("hooked", UUIDUtil.CODEC, hooked.getUUID());
+			}
+			if (((EntityRandomAccessor) fishing).dreammanhunt$sync$getRandom() instanceof LegacyRandomSource random) {
+				hook.putLong("seed", ((LegacyRandomSourceAccessor) random).dreammanhunt$getSeed().get());
+			}
+			hook.put("fields", PlayerFields.capture(fishing));
+			tag.put("fishing", hook);
 		}
 
 		Entity camera = player.getCamera();
@@ -209,6 +239,53 @@ public final class PlayerSync {
 		connection.dreammanhunt$sync$setAboveGroundTickCount(tag.getIntOr("above_ground_ticks", 0));
 		connection.dreammanhunt$sync$setClientVehicleIsFloating(tag.getBooleanOr("client_vehicle_floating", false));
 		connection.dreammanhunt$sync$setAboveGroundVehicleTickCount(tag.getIntOr("above_ground_vehicle_ticks", 0));
+	}
+
+	static void respawnFishingHook(ServerPlayer player, CompoundTag tag) {
+		tag.getCompound("fishing").ifPresent(hook -> {
+			UUID uuid = hook.read("uuid", UUIDUtil.CODEC).orElse(null);
+			Vec3 pos = hook.read("pos", Vec3.CODEC).orElse(null);
+			ServerLevel level = player.level();
+			if (uuid == null || pos == null || level.getEntity(uuid) != null) {
+				return;
+			}
+			FishingHook fishing = new FishingHook(EntityTypes.FISHING_BOBBER, level, hook.getIntOr("luck", 0), hook.getIntOr("lure", 0));
+			fishing.setUUID(uuid);
+			int id = hook.getIntOr("id", -1);
+			if (id > 0 && !idInUse(player.level().getServer(), id)) {
+				fishing.setId(id);
+			}
+			fishing.snapTo(pos.x, pos.y, pos.z, hook.getFloatOr("yaw", 0.0F), hook.getFloatOr("pitch", 0.0F));
+			hook.getCompound("fields").ifPresent(fields -> PlayerFields.apply(fishing, fields));
+			hook.getLong("seed").ifPresent(seed -> {
+				if (((EntityRandomAccessor) fishing).dreammanhunt$sync$getRandom() instanceof LegacyRandomSource random) {
+					((LegacyRandomSourceAccessor) random).dreammanhunt$getSeed().set(seed);
+				}
+			});
+			fishing.setOwner(player);
+			hook.read("hooked", UUIDUtil.CODEC).map(level::getEntity).ifPresent(hooked -> ((FishingHookAccessor) fishing).dreammanhunt$setHookedIn(hooked));
+			level.addFreshEntity(fishing);
+		});
+	}
+
+	private static boolean idInUse(MinecraftServer server, int id) {
+		for (ServerLevel level : server.getAllLevels()) {
+			if (level.getEntity(id) != null) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	static void linkFishingHook(ServerPlayer player) {
+		if (player.fishing != null && !player.fishing.isRemoved()) {
+			return;
+		}
+		List<? extends FishingHook> hooks = player.level().getEntities(EntityTypeTest.<Entity, FishingHook>forClass(FishingHook.class),
+				hook -> !hook.isRemoved() && hook.getPlayerOwner() == player);
+		if (!hooks.isEmpty()) {
+			player.fishing = hooks.getFirst();
+		}
 	}
 
 	static void applyCamera(ServerPlayer player, CompoundTag tag) {

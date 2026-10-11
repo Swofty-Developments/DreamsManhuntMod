@@ -14,11 +14,13 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.MenuProvider;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.Pose;
+import net.minecraft.world.entity.projectile.FishingHook;
 import net.minecraft.world.inventory.ChestMenu;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.item.ItemStack;
@@ -58,6 +60,7 @@ public final class PlayerSyncGameTest implements FabricClientGameTest {
 			connectionAndLivingCounters(context, server);
 			spectatorCameraAcrossRestore(context, server);
 			vehicleAcrossRestore(context, server);
+			fishingAcrossRestore(context, server);
 		}
 		try (TestDedicatedServerContext server = context.worldBuilder().createServer(freePort())) {
 			try (TestDedicatedServerConnection connection = server.connect()) {
@@ -331,6 +334,57 @@ public final class PlayerSyncGameTest implements FabricClientGameTest {
 			}
 		});
 		context.waitTicks(10);
+	}
+
+	private static void fishingAcrossRestore(ClientGameTestContext context, TestServerContext server) {
+		server.runOnServer(s -> {
+			ServerPlayer player = player(s);
+			player.setGameMode(GameType.SURVIVAL);
+			player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.FISHING_ROD));
+			BlockPos below = player.blockPosition().offset(0, -1, 4);
+			player.level().setBlockAndUpdate(below, Blocks.WATER.defaultBlockState());
+			FishingHook hook = new FishingHook(player, player.level(), 0, 0);
+			hook.snapTo(below.getX() + 0.5, below.getY() + 1.0, below.getZ() + 0.5, 0.0F, 0.0F);
+			hook.setDeltaMovement(0.0, 0.0, 0.0);
+			player.level().addFreshEntity(hook);
+		});
+		context.waitFor(mc -> mc.player.fishing != null, 100);
+		context.waitTicks(10);
+		UUID hook = server.computeOnServer(s -> player(s).fishing.getUUID());
+		String id = save(server, "fishing");
+		server.runOnServer(s -> {
+			player(s).fishing.discard();
+			player(s).fishing = null;
+		});
+		context.waitFor(mc -> mc.player.fishing == null, 100);
+		int[] seen = new int[1];
+		int before = SavestateClientNetwork.restoresCompleted();
+		server.runOnServer(s -> {
+			SavestateCoordinator.get(s).restore(Requester.of(s.createCommandSourceStack()), id);
+			for (Entity entity : player(s).level().getAllEntities()) {
+				if (entity instanceof FishingHook bobber) {
+					seen[0]++;
+					System.out.printf("[playersync] restored bobber %s owner %s removed %s%n", bobber.getUUID(), bobber.getPlayerOwner(), bobber.isRemoved());
+				}
+			}
+		});
+		context.waitFor(mc -> SavestateClientNetwork.restoresCompleted() > before, 20 * 60);
+		System.out.printf("[playersync] bobbers right after the engine restore: %d%n", seen[0]);
+		context.waitTicks(5);
+		UUID serverHook = server.computeOnServer(s -> player(s).fishing == null ? null : player(s).fishing.getUUID());
+		boolean serverAlive = server.computeOnServer(s -> player(s).fishing != null && !player(s).fishing.isRemoved());
+		UUID clientHook = context.computeOnClient(mc -> mc.player.fishing == null ? null : mc.player.fishing.getUUID());
+		System.out.printf("[playersync] fishing after restore: server %s (alive %s), client %s, saved %s%n", serverHook, serverAlive, clientHook, hook);
+		check(hook.equals(serverHook) && serverAlive, "the server player owns the restored bobber again");
+		check(hook.equals(clientHook), "the client player owns the restored bobber again");
+		server.runOnServer(s -> {
+			if (player(s).fishing != null) {
+				player(s).fishing.discard();
+			}
+			player(s).setGameMode(GameType.CREATIVE);
+			player(s).setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+		});
+		context.waitTicks(5);
 	}
 
 	private static void chatAcrossRestore(ClientGameTestContext context, TestServerContext server) {

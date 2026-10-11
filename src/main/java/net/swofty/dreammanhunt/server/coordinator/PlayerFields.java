@@ -6,7 +6,6 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.syncher.SynchedEntityData;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import net.swofty.dreammanhunt.DreamManhunt;
@@ -26,14 +25,14 @@ final class PlayerFields {
 			"lastSentExp", "lastActionTime", "chatVisibility", "particleStatus", "canChatColor", "isChangingDimension", "disconnected",
 			"requestedViewDistance", "language", "textFilteringEnabled", "allowsListing", "containerCounter", "wonGame", "postEffectsDirty"
 	);
-	private static volatile List<Field> fields;
+	private static final java.util.Map<Class<?>, List<Field>> FIELDS = new java.util.concurrent.ConcurrentHashMap<>();
 
 	private PlayerFields() {
 	}
 
-	static CompoundTag capture(ServerPlayer player) {
+	static CompoundTag capture(Entity player) {
 		CompoundTag tag = new CompoundTag();
-		for (Field field : fields()) {
+		for (Field field : fields(player.getClass())) {
 			try {
 				Object value = field.get(player);
 				Tag encoded = encode(value);
@@ -47,9 +46,9 @@ final class PlayerFields {
 		return tag;
 	}
 
-	static void apply(ServerPlayer player, CompoundTag tag) {
+	static void apply(Entity player, CompoundTag tag) {
 		applyEntityData(player, tag.getByteArray("synched_data").orElse(new byte[0]));
-		for (Field field : fields()) {
+		for (Field field : fields(player.getClass())) {
 			Tag encoded = tag.get(key(field));
 			if (!(encoded instanceof CompoundTag value)) {
 				continue;
@@ -69,13 +68,13 @@ final class PlayerFields {
 		return field.getDeclaringClass().getSimpleName() + "." + field.getName();
 	}
 
-	private static List<Field> fields() {
-		List<Field> cached = fields;
-		if (cached != null) {
-			return cached;
-		}
+	private static List<Field> fields(Class<?> owner) {
+		return FIELDS.computeIfAbsent(owner, PlayerFields::collect);
+	}
+
+	private static List<Field> collect(Class<?> owner) {
 		List<Field> result = new ArrayList<>();
-		for (Class<?> type = ServerPlayer.class; type != null && type != Object.class; type = type.getSuperclass()) {
+		for (Class<?> type = owner; type != null && type != Object.class; type = type.getSuperclass()) {
 			for (Field field : type.getDeclaredFields()) {
 				int modifiers = field.getModifiers();
 				if (Modifier.isStatic(modifiers) || Modifier.isFinal(modifiers) || field.isSynthetic() || DENY.contains(field.getName())
@@ -89,8 +88,7 @@ final class PlayerFields {
 				}
 			}
 		}
-		fields = List.copyOf(result);
-		return fields;
+		return List.copyOf(result);
 	}
 
 	private static boolean supported(Class<?> type) {

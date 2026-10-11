@@ -246,6 +246,7 @@ public final class SavestateCoordinator {
 				if (sync != null) {
 					PlayerSync.apply(player, sync);
 					PlayerSync.reopenContainer(player, sync);
+					PlayerSync.respawnFishingHook(player, sync);
 					appliedSync.put(player.getUUID(), sync);
 				}
 			}
@@ -369,6 +370,9 @@ public final class SavestateCoordinator {
 				PlayerSync.applyCamera(player, sync);
 			}
 		});
+		for (ServerPlayer player : this.server.getPlayerList().getPlayers()) {
+			PlayerSync.linkFishingHook(player);
+		}
 		ServerTickRateManager tickRate = this.server.tickRateManager();
 		FROZEN.remove(tickRate);
 		tickRate.setFrozen(barrier.restoredFrozen);
