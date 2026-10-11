@@ -118,6 +118,8 @@ public final class ClientSnapshot {
 				EntityTrackingState.apply(minecraft, live.entityTracking);
 			}
 			applyEntities(minecraft, root.getListOrEmpty("entities"));
+		} else if (live != null && live.entityTracking != null) {
+			EntityTrackingState.applyLateArrivals(minecraft, live.entityTracking);
 		}
 		applyChat(minecraft, root, ops);
 		net.swofty.dreammanhunt.client.state.extra.ExtraState.apply(minecraft, root);
