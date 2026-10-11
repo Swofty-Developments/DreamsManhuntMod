@@ -129,6 +129,13 @@ public final class SeedStreams {
 		return SERVER.scheduled;
 	}
 
+	public static void applyEntityOrderNow(MinecraftServer current) {
+		CompoundTag pending = SERVER.scheduled;
+		if (pending != null) {
+			net.swofty.dreammanhunt.server.sync.EntityOrder.apply(current, pending.getCompoundOrEmpty("entityOrder"));
+		}
+	}
+
 	public static void onServerTickStart(boolean frozen) {
 		if (frozen) {
 			return;

@@ -194,6 +194,7 @@ public final class SavestateEngine {
 		state.applyTickRate(this.server);
 		players.attachAll(detached, state.playerRuntime(), preferLive);
 		state.resolveAiReferences();
+		net.swofty.dreammanhunt.randomroot.SeedStreams.applyEntityOrderNow(this.server);
 	}
 
 	private void rollBack(
