@@ -193,7 +193,7 @@ public final class SavestateEngine {
 		state.applyServerCounters(this.server);
 		state.applyTickRate(this.server);
 		players.attachAll(detached, state.playerRuntime(), preferLive);
-		state.applyEntityTickOrder(this.server);
+		state.resolveAiReferences();
 	}
 
 	private void rollBack(
