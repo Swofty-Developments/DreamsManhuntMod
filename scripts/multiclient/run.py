@@ -465,10 +465,7 @@ class Harness:
 			seen_at_resume = sorted(o.split(":")[0] for o in resume.get("others", "").split(",") if o)
 			self.check(seen_at_capture == seen_at_resume,
 				f"{name}: the same other players are loaded on the client at capture and at resume ({seen_at_capture} -> {seen_at_resume})")
-			moment = capture
-			if name == "runner":
-				moment = next(e for e in self.events(name) if e["kind"] == "save_requested")
-			at_capture = sorted(o for o in moment.get("others", "").split(",") if o)
+			at_capture = sorted(o for o in capture.get("others", "").split(",") if o)
 			at_resume = sorted(o for o in resume.get("others", "").split(",") if o)
 			self.check(at_capture == at_resume,
 				f"{name}: other players keep their client entity id and tickCount through the restore (name:id:tickCount {at_capture} -> {at_resume})")
