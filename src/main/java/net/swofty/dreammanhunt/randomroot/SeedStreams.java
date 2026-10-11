@@ -140,7 +140,7 @@ public final class SeedStreams {
 			net.swofty.dreammanhunt.server.sync.EntityOrder.apply(current, scheduled.getCompoundOrEmpty("entityOrder"));
 			net.swofty.dreammanhunt.server.sync.LevelRandoms.apply(current, scheduled.getCompoundOrEmpty("levelRandoms"));
 			net.swofty.dreammanhunt.server.sync.SpawnFlags.apply(current, scheduled.getCompoundOrEmpty("spawnFlags"));
-			if (!Boolean.getBoolean("dreammanhunt.noTickOrder") && System.getenv("DM_NO_TICK_ORDER") == null) net.swofty.dreammanhunt.server.sync.TickOrder.apply(current, scheduled.getCompoundOrEmpty("tickOrder"));
+			net.swofty.dreammanhunt.server.sync.TickOrder.apply(current, scheduled.getCompoundOrEmpty("tickOrder"));
 			for (Tag raw : scheduled.getListOrEmpty("tickers")) {
 				if (raw instanceof CompoundTag tickers) {
 					for (ServerLevel level : current.getAllLevels()) {
