@@ -60,6 +60,7 @@ final class AiState {
 			tag.put("look", fields(mob.getLookControl(), Set.of()));
 			tag.put("jump", fields(mob.getJumpControl(), Set.of()));
 			tag.put("body", fields(get(mob, Mob.class, "bodyRotationControl"), Set.of()));
+			tag.put("malus", malus(mob));
 			tag.put("goals", goals(selector(mob, "goalSelector")));
 			tag.put("targets", goals(selector(mob, "targetSelector")));
 		}
@@ -73,6 +74,7 @@ final class AiState {
 	}
 
 	static void apply(Entity entity, CompoundTag tag, ServerLevel level) {
+		CANONICAL_PATHS.set(new java.util.HashMap<>());
 		try {
 			applyEntityData(entity, tag.getByteArray("data").orElse(new byte[0]));
 			apply(entity, tag.getCompoundOrEmpty("self"), level, ENTITY_DENY);
@@ -82,6 +84,7 @@ final class AiState {
 				apply(mob.getLookControl(), tag.getCompoundOrEmpty("look"), level, Set.of());
 				apply(mob.getJumpControl(), tag.getCompoundOrEmpty("jump"), level, Set.of());
 				apply(get(mob, Mob.class, "bodyRotationControl"), tag.getCompoundOrEmpty("body"), level, Set.of());
+				applyMalus(mob, tag.getCompoundOrEmpty("malus"));
 				applyGoals(selector(mob, "goalSelector"), tag.getListOrEmpty("goals"), level);
 				applyGoals(selector(mob, "targetSelector"), tag.getListOrEmpty("targets"), level);
 				sharePath(mob, selector(mob, "goalSelector"));
@@ -93,6 +96,8 @@ final class AiState {
 			}
 		} catch (RuntimeException e) {
 			LOGGER.warn("Could not restore AI state of {}", entity, e);
+		} finally {
+			CANONICAL_PATHS.remove();
 		}
 	}
 
@@ -137,6 +142,35 @@ final class AiState {
 	static void clearReferences() {
 		PENDING_REFS.clear();
 		DEFERRED.clear();
+	}
+
+	@SuppressWarnings("unchecked")
+	private static CompoundTag malus(Mob mob) {
+		CompoundTag tag = new CompoundTag();
+		Object raw = get(mob, Mob.class, "pathfindingMalus");
+		if (raw instanceof Map<?, ?> map) {
+			for (Map.Entry<?, ?> entry : map.entrySet()) {
+				if (entry.getKey() instanceof Enum<?> type && entry.getValue() instanceof Float value) {
+					tag.putFloat(type.name(), value);
+				}
+			}
+		}
+		return tag;
+	}
+
+	@SuppressWarnings({"unchecked", "rawtypes"})
+	private static void applyMalus(Mob mob, CompoundTag tag) {
+		Object raw = get(mob, Mob.class, "pathfindingMalus");
+		if (!(raw instanceof Map map)) {
+			return;
+		}
+		map.clear();
+		for (String key : tag.keySet()) {
+			try {
+				map.put(net.minecraft.world.level.pathfinder.PathType.valueOf(key), tag.getFloatOr(key, 0.0F));
+			} catch (IllegalArgumentException ignored) {
+			}
+		}
 	}
 
 	private static boolean hasBrainState(LivingEntity living) {
@@ -523,7 +557,23 @@ final class AiState {
 		return tag;
 	}
 
+	private static final ThreadLocal<Map<CompoundTag, Path>> CANONICAL_PATHS = new ThreadLocal<>();
+
 	static Path decodePath(CompoundTag tag) {
+		Map<CompoundTag, Path> canonical = CANONICAL_PATHS.get();
+		if (canonical != null) {
+			Path existing = canonical.get(tag);
+			if (existing != null) {
+				return existing;
+			}
+			Path created = decodePathFresh(tag);
+			canonical.put(tag.copy(), created);
+			return created;
+		}
+		return decodePathFresh(tag);
+	}
+
+	private static Path decodePathFresh(CompoundTag tag) {
 		List<Node> nodes = new ArrayList<>();
 		for (Tag element : tag.getListOrEmpty("nodes")) {
 			if (element instanceof CompoundTag entry) {
