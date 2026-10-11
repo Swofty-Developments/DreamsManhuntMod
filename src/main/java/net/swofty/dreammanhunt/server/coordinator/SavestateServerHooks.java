@@ -1,9 +1,11 @@
 package net.swofty.dreammanhunt.server.coordinator;
 
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.network.chat.RemoteChatSession;
 import net.minecraft.server.level.ServerPlayer;
 import net.swofty.dreammanhunt.network.SavestatePayloads;
 
@@ -34,6 +36,13 @@ public final class SavestateServerHooks {
 					coordinator.onLeave(uuid);
 				}
 			});
+		});
+
+		ServerPlayerEvents.AFTER_RESPAWN.register((oldPlayer, newPlayer, alive) -> {
+			RemoteChatSession session = oldPlayer.getChatSession();
+			if (alive && newPlayer.getChatSession() == null && session != null) {
+				newPlayer.setChatSession(session);
+			}
 		});
 
 		ServerLifecycleEvents.SERVER_STARTING.register(server -> SavestateConfig.load());
