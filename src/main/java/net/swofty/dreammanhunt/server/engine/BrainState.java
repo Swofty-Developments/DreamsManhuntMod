@@ -39,8 +39,19 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 final class BrainState {
-	private static final int MAX_DEPTH = 6;
+	private static final int MAX_DEPTH = 14;
 	private static final Map<Class<?>, List<Field>> FIELDS = new ConcurrentHashMap<>();
+	private static final sun.misc.Unsafe UNSAFE = unsafe();
+
+	private static sun.misc.Unsafe unsafe() {
+		try {
+			Field field = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+			field.setAccessible(true);
+			return (sun.misc.Unsafe) field.get(null);
+		} catch (ReflectiveOperationException e) {
+			throw new IllegalStateException(e);
+		}
+	}
 
 	private BrainState() {
 	}
@@ -150,6 +161,34 @@ final class BrainState {
 			}
 			return;
 		}
+		if (node instanceof Map<?, ?> map) {
+			ListTag entries = new ListTag();
+			for (Map.Entry<?, ?> entry : map.entrySet()) {
+				Object key = entry.getKey();
+				Tag encodedKey = key == null ? null : AiState.encode(key.getClass(), key);
+				if (encodedKey == null) {
+					continue;
+				}
+				CompoundTag child = new CompoundTag();
+				child.put("k", encodedKey);
+				child.putString("kc", key.getClass().getName());
+				Object value = entry.getValue();
+				Tag simple = value == null ? null : AiState.encode(value.getClass(), value);
+				if (simple != null) {
+					child.put("v", simple);
+				} else if (descendable(value)) {
+					CompoundTag walked = new CompoundTag();
+					walk(value, walked, depth + 1, seen);
+					child.put("w", walked);
+				} else {
+					continue;
+				}
+				child.putString("vc", value == null ? "" : value.getClass().getName());
+				entries.add(child);
+			}
+			out.put("@map", entries);
+			return;
+		}
 		if (node instanceof Collection<?> collection) {
 			ListTag children = new ListTag();
 			for (Object element : collection) {
@@ -170,9 +209,18 @@ final class BrainState {
 				continue;
 			}
 			String key = field.getDeclaringClass().getSimpleName() + "." + field.getName();
-			if (value instanceof net.minecraft.world.level.levelgen.LegacyRandomSource random) {
+			if (value instanceof net.minecraft.util.RandomSource random) {
+				Entity owner = CONTEXT.get();
 				CompoundTag seed = new CompoundTag();
-				seed.putLong("seed", ((net.swofty.dreammanhunt.mixin.server.LegacyRandomSourceAccessor) random).dreammanhunt$getSeed().get());
+				if (owner != null && random == owner.level().getRandom()) {
+					seed.putBoolean("level_random", true);
+				} else if (owner != null && random == owner.getRandom()) {
+					seed.putBoolean("entity_random", true);
+				} else if (random instanceof net.minecraft.world.level.levelgen.LegacyRandomSource legacy) {
+					seed.putLong("seed", ((net.swofty.dreammanhunt.mixin.server.LegacyRandomSourceAccessor) legacy).dreammanhunt$getSeed().get());
+				} else {
+					continue;
+				}
 				out.put(key, seed);
 				continue;
 			}
@@ -233,6 +281,39 @@ final class BrainState {
 			}
 			return;
 		}
+		if (node instanceof Map map && state.contains("@map")) {
+			try {
+				Map<Object, Object> rebuilt = new java.util.LinkedHashMap<>();
+				for (Tag element : state.getListOrEmpty("@map")) {
+					if (!(element instanceof CompoundTag child)) {
+						continue;
+					}
+					Object key = AiState.decode(Class.forName(child.getStringOr("kc", "")), child.get("k"));
+					if (key == AiState.Undecodable.INSTANCE || key == null) {
+						continue;
+					}
+					Class<?> valueType = Class.forName(child.getStringOr("vc", ""));
+					Object value;
+					if (child.contains("v")) {
+						value = AiState.decode(valueType, child.get("v"));
+						if (value == AiState.Undecodable.INSTANCE) {
+							continue;
+						}
+					} else {
+						value = map.get(key);
+						if (value == null || value.getClass() != valueType) {
+							value = UNSAFE.allocateInstance(valueType);
+						}
+						apply(value, child.getCompoundOrEmpty("w"), level, depth + 1, seen);
+					}
+					rebuilt.put(key, value);
+				}
+				map.clear();
+				map.putAll(rebuilt);
+			} catch (ReflectiveOperationException | RuntimeException ignored) {
+			}
+			return;
+		}
 		if (node instanceof Collection<?> collection) {
 			ListTag children = state.getListOrEmpty("@elements");
 			int i = 0;
@@ -251,8 +332,15 @@ final class BrainState {
 				continue;
 			}
 			try {
+				if (encoded instanceof CompoundTag shared && (shared.getBooleanOr("level_random", false) || shared.getBooleanOr("entity_random", false))) {
+					Entity owner = CONTEXT.get();
+					if (owner != null && field.get(node) == null) {
+						field.set(node, shared.getBooleanOr("level_random", false) ? owner.level().getRandom() : owner.getRandom());
+					}
+					continue;
+				}
 				if (encoded instanceof CompoundTag seeded && seeded.contains("seed")) {
-					if (field.get(node) instanceof net.minecraft.world.level.levelgen.LegacyRandomSource random) {
+					if (field.get(node) instanceof net.minecraft.world.level.levelgen.LegacyRandomSource random && !isShared(random)) {
 						((net.swofty.dreammanhunt.mixin.server.LegacyRandomSourceAccessor) random).dreammanhunt$getSeed().set(seeded.getLongOr("seed", 0L));
 					}
 					continue;
@@ -285,8 +373,15 @@ final class BrainState {
 		}
 	}
 
+	static final ThreadLocal<Entity> CONTEXT = new ThreadLocal<>();
+
+	private static boolean isShared(net.minecraft.util.RandomSource random) {
+		Entity owner = CONTEXT.get();
+		return owner != null && (random == owner.level().getRandom() || random == owner.getRandom());
+	}
+
 	private static boolean simple(CompoundTag compound) {
-		return compound.contains("v") || compound.contains("null") || compound.contains("ref") || compound.contains("path")
+		return compound.contains("v") || compound.contains("null") || compound.contains("ref") || compound.contains("seed") || compound.contains("level_random") || compound.contains("entity_random") || compound.contains("path")
 				|| compound.contains("vi") || (compound.contains("x") && compound.contains("y") && compound.contains("z") && compound.size() == 3);
 	}
 
@@ -312,6 +407,9 @@ final class BrainState {
 				return descendable(element);
 			}
 			return false;
+		}
+		if (value instanceof Map<?, ?> && !name.contains("Immutable") && !name.contains("Unmodifiable") && !name.contains("Empty") && !name.contains("Singleton")) {
+			return true;
 		}
 		return name.startsWith("net.minecraft.world.entity.ai.behavior.") || name.startsWith("net.minecraft.world.entity.ai.sensing.")
 				|| name.startsWith("net.minecraft.world.entity.ai.targeting.") || name.startsWith("net.minecraft.world.entity.ai.goal.");
