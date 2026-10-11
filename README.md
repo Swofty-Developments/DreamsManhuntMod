@@ -2,7 +2,7 @@
 
 [<img src="https://discordapp.com/assets/e4923594e694a21542a489471ecffa50.svg" alt="Discord" height="55" />](https://discord.swofty.net)
 
-[![Watch the video](https://www.youtube.com/watch?v=ImLSm3my6eY)](https://www.youtube.com/watch?v=ImLSm3my6eY)
+[![Watch the video](https://img.youtube.com/vi/ImLSm3my6eY/maxresdefault.jpg)](https://www.youtube.com/watch?v=ImLSm3my6eY)
 
 A Fabric mod for Minecraft 26.3 that savestates the entire game, create your very own Dream Manhunt!
 
