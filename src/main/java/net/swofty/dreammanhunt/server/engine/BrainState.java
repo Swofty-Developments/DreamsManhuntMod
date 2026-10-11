@@ -144,6 +144,9 @@ final class BrainState {
 				}
 				out.put("@order", order);
 				out.put("@entries", children);
+				if (get(shuffling, "random") instanceof net.minecraft.world.level.levelgen.LegacyRandomSource random) {
+					out.putLong("@seed", ((net.swofty.dreammanhunt.mixin.server.LegacyRandomSourceAccessor) random).dreammanhunt$getSeed().get());
+				}
 			}
 			return;
 		}
@@ -167,6 +170,12 @@ final class BrainState {
 				continue;
 			}
 			String key = field.getDeclaringClass().getSimpleName() + "." + field.getName();
+			if (value instanceof net.minecraft.world.level.levelgen.LegacyRandomSource random) {
+				CompoundTag seed = new CompoundTag();
+				seed.putLong("seed", ((net.swofty.dreammanhunt.mixin.server.LegacyRandomSourceAccessor) random).dreammanhunt$getSeed().get());
+				out.put(key, seed);
+				continue;
+			}
 			if (!Modifier.isFinal(field.getModifiers())) {
 				Tag encoded = AiState.encode(field.getType(), value);
 				if (encoded != null) {
@@ -197,6 +206,9 @@ final class BrainState {
 			List entries = (List) get(shuffling, "entries");
 			if (entries == null) {
 				return;
+			}
+			if (state.contains("@seed") && get(shuffling, "random") instanceof net.minecraft.world.level.levelgen.LegacyRandomSource random) {
+				((net.swofty.dreammanhunt.mixin.server.LegacyRandomSourceAccessor) random).dreammanhunt$getSeed().set(state.getLongOr("@seed", 0L));
 			}
 			ListTag order = state.getListOrEmpty("@order");
 			if (order.size() == entries.size()) {
@@ -239,6 +251,12 @@ final class BrainState {
 				continue;
 			}
 			try {
+				if (encoded instanceof CompoundTag seeded && seeded.contains("seed")) {
+					if (field.get(node) instanceof net.minecraft.world.level.levelgen.LegacyRandomSource random) {
+						((net.swofty.dreammanhunt.mixin.server.LegacyRandomSourceAccessor) random).dreammanhunt$getSeed().set(seeded.getLongOr("seed", 0L));
+					}
+					continue;
+				}
 				if (!Modifier.isFinal(field.getModifiers()) && encoded instanceof CompoundTag compound && !compound.contains("@order") && !compound.contains("@elements") && simple(compound)) {
 					if (Entity.class.isAssignableFrom(field.getType())) {
 						UUID target = compound.read("ref", UUIDUtil.CODEC).orElse(null);
@@ -561,14 +579,20 @@ final class BrainState {
 		if (!(raw instanceof Set set)) {
 			return;
 		}
-		set.clear();
+		List<Activity> wanted = new ArrayList<>();
 		for (Tag element : names) {
 			if (element instanceof CompoundTag entry) {
 				Activity activity = activity(entry.getStringOr("v", ""));
 				if (activity != null) {
-					set.add(activity);
+					wanted.add(activity);
 				}
 			}
+		}
+		try {
+			set.clear();
+			set.addAll(wanted);
+		} catch (UnsupportedOperationException e) {
+			set(brain, field, com.google.common.collect.ImmutableSet.copyOf(wanted));
 		}
 	}
 

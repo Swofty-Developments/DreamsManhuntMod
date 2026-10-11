@@ -59,6 +59,7 @@ final class AiState {
 			tag.put("move", fields(mob.getMoveControl(), Set.of()));
 			tag.put("look", fields(mob.getLookControl(), Set.of()));
 			tag.put("jump", fields(mob.getJumpControl(), Set.of()));
+			tag.put("body", fields(get(mob, Mob.class, "bodyRotationControl"), Set.of()));
 			tag.put("goals", goals(selector(mob, "goalSelector")));
 			tag.put("targets", goals(selector(mob, "targetSelector")));
 		}
@@ -77,6 +78,7 @@ final class AiState {
 				apply(mob.getMoveControl(), tag.getCompoundOrEmpty("move"), level, Set.of());
 				apply(mob.getLookControl(), tag.getCompoundOrEmpty("look"), level, Set.of());
 				apply(mob.getJumpControl(), tag.getCompoundOrEmpty("jump"), level, Set.of());
+				apply(get(mob, Mob.class, "bodyRotationControl"), tag.getCompoundOrEmpty("body"), level, Set.of());
 				applyGoals(selector(mob, "goalSelector"), tag.getListOrEmpty("goals"), level);
 				applyGoals(selector(mob, "targetSelector"), tag.getListOrEmpty("targets"), level);
 				sharePath(mob, selector(mob, "goalSelector"));
@@ -328,6 +330,12 @@ final class AiState {
 				continue;
 			}
 			try {
+				if (encoded instanceof CompoundTag seeded && seeded.contains("seed")) {
+					if (field.get(owner) instanceof net.minecraft.world.level.levelgen.LegacyRandomSource random) {
+						((net.swofty.dreammanhunt.mixin.server.LegacyRandomSourceAccessor) random).dreammanhunt$getSeed().set(seeded.getLongOr("seed", 0L));
+					}
+					continue;
+				}
 				if (Entity.class.isAssignableFrom(field.getType())) {
 					if (encoded instanceof CompoundTag ref && ref.contains("ref")) {
 						UUID target = ref.read("ref", UUIDUtil.CODEC).orElse(null);
@@ -383,6 +391,8 @@ final class AiState {
 			case Vec3i p -> tag.putIntArray("vi", new int[]{p.getX(), p.getY(), p.getZ()});
 			case UUID u -> tag.store("v", UUIDUtil.CODEC, u);
 			case Entity e -> tag.store("ref", UUIDUtil.CODEC, e.getUUID());
+			case net.minecraft.world.entity.EntityReference<?> reference -> tag.store("eref", UUIDUtil.CODEC, reference.getUUID());
+			case net.minecraft.world.level.levelgen.LegacyRandomSource random -> tag.putLong("seed", ((net.swofty.dreammanhunt.mixin.server.LegacyRandomSourceAccessor) random).dreammanhunt$getSeed().get());
 			case Path path -> tag.put("path", encodePath(path));
 			default -> {
 				return null;
@@ -394,7 +404,7 @@ final class AiState {
 	private static boolean supported(Class<?> type) {
 		return type == Integer.class || type == Long.class || type == Float.class || type == Double.class || type == Boolean.class
 				|| type == String.class || type.isEnum() || type == Vec3.class || type == BlockPos.class || type == Vec3i.class || type == UUID.class
-				|| Entity.class.isAssignableFrom(type) || type == Path.class;
+				|| Entity.class.isAssignableFrom(type) || type == Path.class || type == net.minecraft.world.entity.EntityReference.class;
 	}
 
 	@SuppressWarnings({"unchecked", "rawtypes"})
@@ -454,6 +464,9 @@ final class AiState {
 		}
 		if (type == Path.class) {
 			return decodePath(tag.getCompoundOrEmpty("path"));
+		}
+		if (type == net.minecraft.world.entity.EntityReference.class && tag.contains("eref")) {
+			return tag.read("eref", UUIDUtil.CODEC).map(net.minecraft.world.entity.EntityReference::of).orElse(null);
 		}
 		return Undecodable.INSTANCE;
 	}
