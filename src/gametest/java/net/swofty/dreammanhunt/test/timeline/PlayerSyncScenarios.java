@@ -44,6 +44,28 @@ public final class PlayerSyncScenarios {
 				server.overworld().setBlock(env.origin(), Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
 			}
 		}));
+		list.add(TimelineScenario.of("playersync-fishing", 100, env -> {
+			env.fill(-2, -1, 3, 2, -1, 7, "minecraft:water");
+			env.server().runOnServer(server -> {
+				for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+					player.setGameMode(GameType.SURVIVAL);
+					player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.FISHING_ROD));
+					net.minecraft.world.entity.projectile.FishingHook hook = new net.minecraft.world.entity.projectile.FishingHook(player, player.level(), 0, 3);
+					hook.snapTo(env.origin().getX() + 0.5, env.origin().getY() - 0.2, env.origin().getZ() + 5.5, 0.0F, 0.0F);
+					hook.setDeltaMovement(0.0, 0.0, 0.0);
+					player.level().addFreshEntity(hook);
+				}
+			});
+		}).settle(30).inputs((server, env, tick) -> {
+			if (tick == 95) {
+				for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+					if (player.fishing != null) {
+						player.fishing.discard();
+					}
+					player.setGameMode(GameType.CREATIVE);
+				}
+			}
+		}));
 		list.add(TimelineScenario.of("playersync-chest", 60, env -> {
 			BlockPos chest = env.origin().offset(2, 0, 0);
 			env.block(2, 0, 0, "minecraft:chest");
@@ -90,6 +112,7 @@ public final class PlayerSyncScenarios {
 				fields.put("floating", connection.dreammanhunt$sync$getClientIsFloating() + ":" + connection.dreammanhunt$sync$getAboveGroundTickCount());
 				fields.put("fallFlyTicks", Integer.toString(((LivingEntitySyncAccessor) player).dreammanhunt$sync$getFallFlyTicks()));
 				fields.put("vehicle", player.getVehicle() == null ? "none" : player.getVehicle().getUUID().toString());
+				fields.put("fishing", player.fishing == null ? "none" : player.fishing.getUUID() + " " + Reflect.describe(player.fishing, 0));
 			}
 			ServerLevel level = server.overworld();
 			for (BlockPos pos : BlockPos.betweenClosed(area.min(), area.max())) {
@@ -111,6 +134,7 @@ public final class PlayerSyncScenarios {
 					: minecraft.getCameraEntity().getUUID().toString());
 			fields.put("vehicle", minecraft.player.getVehicle() == null ? "none" : minecraft.player.getVehicle().getUUID().toString());
 			fields.put("flags", minecraft.player.isShiftKeyDown() + "/" + minecraft.player.isSprinting() + "/" + minecraft.player.isFallFlying());
+			fields.put("fishing", minecraft.player.fishing == null ? "none" : minecraft.player.fishing.getUUID().toString());
 		});
 	}
 }
