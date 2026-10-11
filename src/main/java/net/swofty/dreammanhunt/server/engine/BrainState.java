@@ -498,6 +498,19 @@ final class BrainState {
 			case NearestVisibleLivingEntities visible -> {
 				Object list = get(visible, "nearbyEntities");
 				tag.put("visible", entities(list instanceof List<?> l ? l : List.of()));
+				Map<?, ?> cache = sightCache(visible);
+				if (cache != null) {
+					ListTag cached = new ListTag();
+					for (Map.Entry<?, ?> entry : cache.entrySet()) {
+						if (entry.getKey() instanceof Entity entity && entry.getValue() instanceof Boolean visibleNow) {
+							CompoundTag item = new CompoundTag();
+							item.store("uuid", UUIDUtil.CODEC, entity.getUUID());
+							item.putBoolean("v", visibleNow);
+							cached.add(item);
+						}
+					}
+					tag.put("sight", cached);
+				}
 			}
 			case WalkTarget walk -> {
 				CompoundTag tracker = encodeTracker(walk.getTarget());
@@ -540,7 +553,12 @@ final class BrainState {
 		}
 		if (tag.contains("visible")) {
 			List<LivingEntity> entities = resolveAll(tag.getListOrEmpty("visible"), level);
-			return entities == null ? Unresolved.INSTANCE : new NearestVisibleLivingEntities(level, body, entities);
+			if (entities == null) {
+				return Unresolved.INSTANCE;
+			}
+			NearestVisibleLivingEntities visible = new NearestVisibleLivingEntities(level, body, entities);
+			restoreSightCache(visible, tag.getListOrEmpty("sight"), level);
+			return visible;
 		}
 		if (tag.contains("entities")) {
 			List<LivingEntity> entities = resolveAll(tag.getListOrEmpty("entities"), level);
@@ -570,6 +588,38 @@ final class BrainState {
 			}
 		}
 		return null;
+	}
+
+	@SuppressWarnings("unchecked")
+	private static Map<Object, Boolean> sightCache(NearestVisibleLivingEntities visible) {
+		Object test = get(visible, "lineOfSightTest");
+		if (test == null) {
+			return null;
+		}
+		for (Field field : fields(test.getClass())) {
+			try {
+				if (field.get(test) instanceof it.unimi.dsi.fastutil.objects.Object2BooleanMap<?> map) {
+					return (Map<Object, Boolean>) (Map<?, ?>) map;
+				}
+			} catch (IllegalAccessException ignored) {
+			}
+		}
+		return null;
+	}
+
+	private static void restoreSightCache(NearestVisibleLivingEntities visible, ListTag cached, ServerLevel level) {
+		Map<Object, Boolean> cache = sightCache(visible);
+		if (cache == null) {
+			return;
+		}
+		for (Tag element : cached) {
+			if (element instanceof CompoundTag item) {
+				Entity entity = item.read("uuid", UUIDUtil.CODEC).map(level::getEntity).orElse(null);
+				if (entity != null) {
+					cache.put(entity, item.getBooleanOr("v", false));
+				}
+			}
+		}
 	}
 
 	private static CompoundTag encodeTracker(PositionTracker tracker) {
