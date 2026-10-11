@@ -111,6 +111,7 @@ public final class TimelineScenarios {
 		}).settle(100).area(net.minecraft.world.level.Level.END, new net.minecraft.core.BlockPos(0, 70, 0), 120));
 		list.addAll(WorldSyncScenarios.all());
 		PlayerSyncScenarios.addTo(list);
+		TrackingSyncScenarios.addTo(list);
 		return list;
 	}
 }

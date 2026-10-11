@@ -86,7 +86,7 @@ public final class TrackingSyncGameTest implements FabricClientGameTest {
 			String id = after.iterator().next();
 			context.waitFor(mc -> ClientStateManager.get().has(id), 200);
 			int capturedHud = context.computeOnClient(mc -> ClientStateManager.get().snapshot(id)).getCompoundOrEmpty("timing").getIntOr("hudTickCount", -1);
-			int base = capturedHud + LEAD_TICKS;
+			int base = Math.max(capturedHud + LEAD_TICKS, context.computeOnClient(TrackingSyncGameTest::hudTicks));
 
 			Timeline uncut = record(context, server, base, "trk-cap");
 			context.waitTicks(40);
