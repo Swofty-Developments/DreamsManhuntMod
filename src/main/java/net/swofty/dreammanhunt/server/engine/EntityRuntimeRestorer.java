@@ -22,6 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class EntityRuntimeRestorer {
 	private static volatile Map<UUID, CompoundTag> pending = new ConcurrentHashMap<>();
+	private static final Map<Entity, float[]> RIDE_ROTATIONS = java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
 
 	private EntityRuntimeRestorer() {
 	}
@@ -51,6 +52,7 @@ public final class EntityRuntimeRestorer {
 	static void applyTag(Entity entity, CompoundTag tag) {
 		if (entity.level() instanceof ServerLevel level) {
 			tag.getCompound("ai").ifPresent(ai -> AiState.apply(entity, ai, level));
+			RIDE_ROTATIONS.put(entity, rotations(entity));
 		}
 		EntityAccessor accessor = (EntityAccessor) entity;
 		if (accessor.dreammanhunt$getRandom() instanceof LegacyRandomSource random) {
@@ -90,6 +92,38 @@ public final class EntityRuntimeRestorer {
 				accessor.dreammanhunt$setRecentKineticEnemies(new Object2LongOpenHashMap<>());
 			}
 		});
+	}
+
+	public static void afterStartRiding(Entity entity) {
+		float[] saved = RIDE_ROTATIONS.remove(entity);
+		if (saved == null) {
+			return;
+		}
+		entity.setYRot(saved[0]);
+		entity.setXRot(saved[1]);
+		entity.yRotO = saved[2];
+		entity.xRotO = saved[3];
+		if (entity instanceof LivingEntity living) {
+			living.yHeadRot = saved[4];
+			living.yHeadRotO = saved[5];
+			living.yBodyRot = saved[6];
+			living.yBodyRotO = saved[7];
+		}
+	}
+
+	private static float[] rotations(Entity entity) {
+		float[] values = new float[8];
+		values[0] = entity.getYRot();
+		values[1] = entity.getXRot();
+		values[2] = entity.yRotO;
+		values[3] = entity.xRotO;
+		if (entity instanceof LivingEntity living) {
+			values[4] = living.yHeadRot;
+			values[5] = living.yHeadRotO;
+			values[6] = living.yBodyRot;
+			values[7] = living.yBodyRotO;
+		}
+		return values;
 	}
 
 	static CompoundTag capture(Entity entity) {

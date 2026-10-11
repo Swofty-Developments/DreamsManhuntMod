@@ -96,6 +96,11 @@ public final class TimelineScenarios {
 		list.add(TimelineScenario.of("armadillos", 80, env -> {
 			env.summon("minecraft:armadillo", 3, 0, 4, "");
 		}).settle(30));
+		list.add(TimelineScenario.of("ridden_horses", 100, env -> {
+			env.cmd("time set 18000");
+			env.summon("minecraft:horse", 5, 0, 6, "{Tame:1b,Passengers:[{id:\"minecraft:skeleton\"}]}");
+			env.summon("minecraft:horse", -5, 0, 7, "{Tame:1b,Passengers:[{id:\"minecraft:zombie\"}]}");
+		}).settle(40));
 		list.add(TimelineScenario.of("raid", 100, env -> {
 			env.cmd("time set 6000");
 			for (int i = 0; i < 4; i++) {

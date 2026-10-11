@@ -51,6 +51,15 @@ final class AiState {
 	}
 
 	static CompoundTag capture(Entity entity) {
+		BrainState.CONTEXT.set(entity);
+		try {
+			return captureInContext(entity);
+		} finally {
+			BrainState.CONTEXT.remove();
+		}
+	}
+
+	private static CompoundTag captureInContext(Entity entity) {
 		CompoundTag tag = new CompoundTag();
 		tag.put("self", fields(entity, ENTITY_DENY));
 		tag.putByteArray("data", entityData(entity));
@@ -75,6 +84,7 @@ final class AiState {
 
 	static void apply(Entity entity, CompoundTag tag, ServerLevel level) {
 		CANONICAL_PATHS.set(new java.util.HashMap<>());
+		BrainState.CONTEXT.set(entity);
 		try {
 			applyEntityData(entity, tag.getByteArray("data").orElse(new byte[0]));
 			apply(entity, tag.getCompoundOrEmpty("self"), level, ENTITY_DENY);
@@ -98,6 +108,7 @@ final class AiState {
 			LOGGER.warn("Could not restore AI state of {}", entity, e);
 		} finally {
 			CANONICAL_PATHS.remove();
+			BrainState.CONTEXT.remove();
 		}
 	}
 
@@ -392,7 +403,9 @@ final class AiState {
 			}
 			try {
 				if (encoded instanceof CompoundTag seeded && seeded.contains("seed")) {
-					if (field.get(owner) instanceof net.minecraft.world.level.levelgen.LegacyRandomSource random) {
+					Entity context = BrainState.CONTEXT.get();
+					if (field.get(owner) instanceof net.minecraft.world.level.levelgen.LegacyRandomSource random
+							&& (context == null || (random != context.level().getRandom() && random != context.getRandom()))) {
 						((net.swofty.dreammanhunt.mixin.server.LegacyRandomSourceAccessor) random).dreammanhunt$getSeed().set(seeded.getLongOr("seed", 0L));
 					}
 					continue;
