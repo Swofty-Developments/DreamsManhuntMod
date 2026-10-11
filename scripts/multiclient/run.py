@@ -20,7 +20,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-CPUS = "2-7,10,11,14-31"
+CPUS = os.environ.get("DM_CPUS", "2-7,10,11,14-19")
 SHOT_OFFSETS = (10, 30)
 
 # name, role, ticks to walk forward during the mutate phase, degrees to turn

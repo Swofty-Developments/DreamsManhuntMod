@@ -3,6 +3,8 @@
 	"package": "net.swofty.dreammanhunt.client.mixin.ui",
 	"compatibilityLevel": "JAVA_25",
 	"client": [
+		"BlockStatePredictionHandlerAccessor",
+		"ClientLevelPredictionAccessor",
 		"GameRendererMixin",
 		"GuiMixin",
 		"IntegratedServerMixin"

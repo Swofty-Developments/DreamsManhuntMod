@@ -12,6 +12,7 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.goal.GoalSelector;
@@ -41,6 +42,7 @@ final class AiState {
 	);
 	private static final Map<Class<?>, List<Field>> FIELDS = new ConcurrentHashMap<>();
 	private static final List<PendingRef> PENDING_REFS = new CopyOnWriteArrayList<>();
+	private static final List<java.util.function.BooleanSupplier> DEFERRED = new CopyOnWriteArrayList<>();
 
 	private record PendingRef(Object owner, Field field, UUID target, ServerLevel level) {
 	}
@@ -57,8 +59,12 @@ final class AiState {
 			tag.put("move", fields(mob.getMoveControl(), Set.of()));
 			tag.put("look", fields(mob.getLookControl(), Set.of()));
 			tag.put("jump", fields(mob.getJumpControl(), Set.of()));
+			tag.put("body", fields(get(mob, Mob.class, "bodyRotationControl"), Set.of()));
 			tag.put("goals", goals(selector(mob, "goalSelector")));
 			tag.put("targets", goals(selector(mob, "targetSelector")));
+		}
+		if (entity instanceof LivingEntity living && hasBrainState(living)) {
+			tag.put("brain", BrainState.capture(living));
 		}
 		return tag;
 	}
@@ -72,8 +78,14 @@ final class AiState {
 				apply(mob.getMoveControl(), tag.getCompoundOrEmpty("move"), level, Set.of());
 				apply(mob.getLookControl(), tag.getCompoundOrEmpty("look"), level, Set.of());
 				apply(mob.getJumpControl(), tag.getCompoundOrEmpty("jump"), level, Set.of());
+				apply(get(mob, Mob.class, "bodyRotationControl"), tag.getCompoundOrEmpty("body"), level, Set.of());
 				applyGoals(selector(mob, "goalSelector"), tag.getListOrEmpty("goals"), level);
 				applyGoals(selector(mob, "targetSelector"), tag.getListOrEmpty("targets"), level);
+				sharePath(mob, selector(mob, "goalSelector"));
+				sharePath(mob, selector(mob, "targetSelector"));
+			}
+			if (entity instanceof LivingEntity living) {
+				tag.getCompound("brain").ifPresent(brain -> BrainState.apply(living, brain, level));
 			}
 		} catch (RuntimeException e) {
 			LOGGER.warn("Could not restore AI state of {}", entity, e);
@@ -95,10 +107,58 @@ final class AiState {
 			}
 		}
 		PENDING_REFS.removeAll(resolved);
+		List<java.util.function.BooleanSupplier> done = new ArrayList<>();
+		for (java.util.function.BooleanSupplier action : DEFERRED) {
+			try {
+				if (action.getAsBoolean()) {
+					done.add(action);
+				}
+			} catch (RuntimeException e) {
+				done.add(action);
+			}
+		}
+		DEFERRED.removeAll(done);
+	}
+
+	static void defer(java.util.function.BooleanSupplier action) {
+		if (!action.getAsBoolean()) {
+			DEFERRED.add(action);
+		}
+	}
+
+	static void deferRef(Object owner, Field field, UUID target, ServerLevel level) {
+		PENDING_REFS.add(new PendingRef(owner, field, target, level));
 	}
 
 	static void clearReferences() {
 		PENDING_REFS.clear();
+		DEFERRED.clear();
+	}
+
+	private static boolean hasBrainState(LivingEntity living) {
+		Object memories = get(living.getBrain(), net.minecraft.world.entity.ai.Brain.class, "memories");
+		return memories instanceof Map<?, ?> map && !map.isEmpty();
+	}
+
+	private static void sharePath(Mob mob, GoalSelector selector) {
+		Path navigationPath = mob.getNavigation().getPath();
+		if (selector == null || navigationPath == null) {
+			return;
+		}
+		CompoundTag navigationTag = encodePath(navigationPath);
+		for (WrappedGoal wrapped : selector.getAvailableGoals()) {
+			for (Field field : fieldsOf(wrapped.getGoal().getClass())) {
+				if (field.getType() != Path.class) {
+					continue;
+				}
+				try {
+					if (field.get(wrapped.getGoal()) instanceof Path path && path != navigationPath && encodePath(path).equals(navigationTag)) {
+						field.set(wrapped.getGoal(), navigationPath);
+					}
+				} catch (IllegalAccessException ignored) {
+				}
+			}
+		}
 	}
 
 	private static GoalSelector selector(Mob mob, String name) {
@@ -115,6 +175,7 @@ final class AiState {
 			entry.putString("class", wrapped.getGoal().getClass().getName());
 			entry.putBoolean("running", wrapped.isRunning());
 			entry.put("fields", fields(wrapped.getGoal(), Set.of()));
+			entry.put("final", finalPrimitives(wrapped.getGoal()));
 			list.add(entry);
 		}
 		return list;
@@ -137,11 +198,59 @@ final class AiState {
 				continue;
 			}
 			apply(wrapped.getGoal(), entry.getCompoundOrEmpty("fields"), level, Set.of());
+			applyFinalPrimitives(wrapped.getGoal(), entry.getCompoundOrEmpty("final"));
 			boolean running = entry.getBooleanOr("running", false);
 			set(wrapped, WrappedGoal.class, "isRunning", running);
 			if (running && lockedFlags != null) {
 				for (Goal.Flag flag : wrapped.getGoal().getFlags()) {
 					lockedFlags.put(flag, wrapped);
+				}
+			}
+		}
+	}
+
+	private static CompoundTag finalPrimitives(Object owner) {
+		CompoundTag tag = new CompoundTag();
+		for (Class<?> c = owner.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+			for (Field field : c.getDeclaredFields()) {
+				int modifiers = field.getModifiers();
+				if (Modifier.isStatic(modifiers) || !Modifier.isFinal(modifiers) || !field.getType().isPrimitive()) {
+					continue;
+				}
+				try {
+					field.setAccessible(true);
+					Tag encoded = encode(field.getType(), field.get(owner));
+					if (encoded != null) {
+						tag.put(key(field), encoded);
+					}
+				} catch (ReflectiveOperationException | RuntimeException ignored) {
+				}
+			}
+		}
+		return tag;
+	}
+
+	private static void applyFinalPrimitives(Object owner, CompoundTag tag) {
+		if (tag.isEmpty()) {
+			return;
+		}
+		for (Class<?> c = owner.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+			for (Field field : c.getDeclaredFields()) {
+				int modifiers = field.getModifiers();
+				if (Modifier.isStatic(modifiers) || !Modifier.isFinal(modifiers) || !field.getType().isPrimitive()) {
+					continue;
+				}
+				Tag encoded = tag.get(key(field));
+				if (encoded == null) {
+					continue;
+				}
+				try {
+					field.setAccessible(true);
+					Object value = decode(field.getType(), encoded);
+					if (value != Undecodable.INSTANCE) {
+						field.set(owner, value);
+					}
+				} catch (ReflectiveOperationException | RuntimeException ignored) {
 				}
 			}
 		}
@@ -221,6 +330,12 @@ final class AiState {
 				continue;
 			}
 			try {
+				if (encoded instanceof CompoundTag seeded && seeded.contains("seed")) {
+					if (field.get(owner) instanceof net.minecraft.world.level.levelgen.LegacyRandomSource random) {
+						((net.swofty.dreammanhunt.mixin.server.LegacyRandomSourceAccessor) random).dreammanhunt$getSeed().set(seeded.getLongOr("seed", 0L));
+					}
+					continue;
+				}
 				if (Entity.class.isAssignableFrom(field.getType())) {
 					if (encoded instanceof CompoundTag ref && ref.contains("ref")) {
 						UUID target = ref.read("ref", UUIDUtil.CODEC).orElse(null);
@@ -244,11 +359,11 @@ final class AiState {
 		}
 	}
 
-	private enum Undecodable {
+	enum Undecodable {
 		INSTANCE
 	}
 
-	private static Tag encode(Class<?> type, Object value) {
+	static Tag encode(Class<?> type, Object value) {
 		CompoundTag tag = new CompoundTag();
 		if (value == null) {
 			if (type.isPrimitive()) {
@@ -276,6 +391,8 @@ final class AiState {
 			case Vec3i p -> tag.putIntArray("vi", new int[]{p.getX(), p.getY(), p.getZ()});
 			case UUID u -> tag.store("v", UUIDUtil.CODEC, u);
 			case Entity e -> tag.store("ref", UUIDUtil.CODEC, e.getUUID());
+			case net.minecraft.world.entity.EntityReference<?> reference -> tag.store("eref", UUIDUtil.CODEC, reference.getUUID());
+			case net.minecraft.world.level.levelgen.LegacyRandomSource random -> tag.putLong("seed", ((net.swofty.dreammanhunt.mixin.server.LegacyRandomSourceAccessor) random).dreammanhunt$getSeed().get());
 			case Path path -> tag.put("path", encodePath(path));
 			default -> {
 				return null;
@@ -287,11 +404,11 @@ final class AiState {
 	private static boolean supported(Class<?> type) {
 		return type == Integer.class || type == Long.class || type == Float.class || type == Double.class || type == Boolean.class
 				|| type == String.class || type.isEnum() || type == Vec3.class || type == BlockPos.class || type == Vec3i.class || type == UUID.class
-				|| Entity.class.isAssignableFrom(type) || type == Path.class;
+				|| Entity.class.isAssignableFrom(type) || type == Path.class || type == net.minecraft.world.entity.EntityReference.class;
 	}
 
 	@SuppressWarnings({"unchecked", "rawtypes"})
-	private static Object decode(Class<?> type, Tag encoded) {
+	static Object decode(Class<?> type, Tag encoded) {
 		if (!(encoded instanceof CompoundTag tag)) {
 			return Undecodable.INSTANCE;
 		}
@@ -339,16 +456,22 @@ final class AiState {
 			return tag.read("v", UUIDUtil.CODEC).orElse(null);
 		}
 		if (type == Vec3i.class) {
+			if (tag.contains("v")) {
+				return BlockPos.of(tag.getLongOr("v", 0L));
+			}
 			int[] xyz = tag.getIntArray("vi").orElse(new int[3]);
 			return xyz.length == 3 ? new Vec3i(xyz[0], xyz[1], xyz[2]) : Undecodable.INSTANCE;
 		}
 		if (type == Path.class) {
 			return decodePath(tag.getCompoundOrEmpty("path"));
 		}
+		if (type == net.minecraft.world.entity.EntityReference.class && tag.contains("eref")) {
+			return tag.read("eref", UUIDUtil.CODEC).map(net.minecraft.world.entity.EntityReference::of).orElse(null);
+		}
 		return Undecodable.INSTANCE;
 	}
 
-	private static CompoundTag encodePath(Path path) {
+	static CompoundTag encodePath(Path path) {
 		CompoundTag tag = new CompoundTag();
 		ListTag nodes = new ListTag();
 		for (int i = 0; i < path.getNodeCount(); i++) {
@@ -369,7 +492,7 @@ final class AiState {
 		return tag;
 	}
 
-	private static Path decodePath(CompoundTag tag) {
+	static Path decodePath(CompoundTag tag) {
 		List<Node> nodes = new ArrayList<>();
 		for (Tag element : tag.getListOrEmpty("nodes")) {
 			if (element instanceof CompoundTag entry) {
@@ -392,7 +515,7 @@ final class AiState {
 		return field.getDeclaringClass().getSimpleName() + "." + field.getName();
 	}
 
-	private static List<Field> fieldsOf(Class<?> type) {
+	static List<Field> fieldsOf(Class<?> type) {
 		return FIELDS.computeIfAbsent(type, t -> {
 			List<Field> result = new ArrayList<>();
 			for (Class<?> c = t; c != null && c != Object.class; c = c.getSuperclass()) {

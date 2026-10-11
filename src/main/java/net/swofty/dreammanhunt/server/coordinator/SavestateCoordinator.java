@@ -2,6 +2,7 @@ package net.swofty.dreammanhunt.server.coordinator;
 
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.locale.Language;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.server.MinecraftServer;
@@ -17,6 +18,7 @@ import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -154,8 +156,10 @@ public final class SavestateCoordinator {
 		this.busy = true;
 		try {
 			this.sendToModded(new SavestatePayloads.Capture(id));
+			Map<UUID, CompoundTag> playerSync = PlayerSync.captureAll(this.server);
 			long start = System.nanoTime();
 			SavestateInfo info = this.engine().save(id, name, requester.player());
+			PlayerSync.write(this.server, id, playerSync);
 			DreamManhunt.LOGGER.info("Saved savestate '{}' ({}) in {} ms", info.name(), id, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start));
 			if (requester.isCommand()) {
 				requester.success(tr("dreammanhunt.notice.saved", info.name()));
@@ -231,9 +235,21 @@ public final class SavestateCoordinator {
 		}
 
 		boolean failed = false;
+		Map<UUID, CompoundTag> savedSync = PlayerSync.read(this.server, id);
+		Map<UUID, CompoundTag> liveSync = PlayerSync.captureAll(this.server);
+		Map<UUID, CompoundTag> appliedSync = new HashMap<>();
 		long start = System.nanoTime();
 		try {
 			this.engine().restore(id);
+			for (ServerPlayer player : this.server.getPlayerList().getPlayers()) {
+				CompoundTag sync = savedSync.getOrDefault(player.getUUID(), liveSync.get(player.getUUID()));
+				if (sync != null) {
+					PlayerSync.apply(player, sync);
+					PlayerSync.reopenContainer(player, sync);
+					PlayerSync.respawnFishingHook(player, sync);
+					appliedSync.put(player.getUUID(), sync);
+				}
+			}
 			DreamManhunt.LOGGER.info("Restored savestate '{}' ({}) in {} ms", info.name(), id, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start));
 		} catch (Exception e) {
 			failed = true;
@@ -245,6 +261,7 @@ public final class SavestateCoordinator {
 		ServerTickRateManager tickRate = this.server.tickRateManager();
 		Barrier barrier = new Barrier(id, info.name(), requester, participants, tickRate.isFrozen(), tickRate.frozenTicksToRun(),
 				System.nanoTime() + TimeUnit.SECONDS.toNanos(SavestateConfig.get().readyTimeoutSeconds()), failed);
+		barrier.reopen.putAll(appliedSync);
 		this.barrier = barrier;
 		tickRate.setFrozenTicksToRun(0);
 		tickRate.setFrozen(true);
@@ -331,7 +348,7 @@ public final class SavestateCoordinator {
 		if (barrier == null || !barrier.pending.isEmpty()) {
 			return;
 		}
-		if (!this.chunksDelivered(barrier)) {
+		if (!this.chunksDelivered(barrier) || !net.swofty.dreammanhunt.server.sync.ChunkReadiness.ready(this.server)) {
 			if (!barrier.waitingForChunks) {
 				barrier.waitingForChunks = true;
 				DreamManhunt.LOGGER.info("Restore {} barrier: everyone is ready, waiting for chunk delivery", barrier.id);
@@ -347,6 +364,15 @@ public final class SavestateCoordinator {
 		}
 		this.barrier = null;
 		this.syncEntityTracking();
+		barrier.reopen.forEach((uuid, sync) -> {
+			ServerPlayer player = this.server.getPlayerList().getPlayer(uuid);
+			if (player != null) {
+				PlayerSync.applyCamera(player, sync);
+			}
+		});
+		for (ServerPlayer player : this.server.getPlayerList().getPlayers()) {
+			PlayerSync.linkFishingHook(player);
+		}
 		ServerTickRateManager tickRate = this.server.tickRateManager();
 		FROZEN.remove(tickRate);
 		tickRate.setFrozen(barrier.restoredFrozen);
@@ -359,6 +385,12 @@ public final class SavestateCoordinator {
 				ServerPlayNetworking.send(player, new SavestatePayloads.RestoreResume(barrier.id));
 			}
 		}
+		barrier.reopen.forEach((uuid, sync) -> {
+			ServerPlayer player = this.server.getPlayerList().getPlayer(uuid);
+			if (player != null) {
+				PlayerSync.resendContainer(player);
+			}
+		});
 		this.busy = false;
 		DreamManhunt.LOGGER.info("Restore {} barrier: resumed after {} ms (timed out: {})", barrier.id,
 				TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - barrier.startNanos), timedOut);
@@ -389,6 +421,7 @@ public final class SavestateCoordinator {
 		final long deadlineNanos;
 		final boolean failed;
 		final long startNanos = System.nanoTime();
+		final Map<UUID, CompoundTag> reopen = new HashMap<>();
 		boolean waitingForChunks;
 
 		Barrier(String id, String name, Requester requester, Set<UUID> participants, boolean restoredFrozen, int restoredStepTicks,

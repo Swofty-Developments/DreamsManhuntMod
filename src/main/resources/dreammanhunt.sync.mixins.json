@@ -1,0 +1,17 @@
+{
+	"required": true,
+	"package": "net.swofty.dreammanhunt.mixin.sync",
+	"compatibilityLevel": "JAVA_25",
+	"mixins": [
+		"EntityTickListAccessor",
+		"PistonMovingBlockEntityMixin",
+		"ServerChunkCacheMixin",
+		"ServerLevelAccessor"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	},
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}
