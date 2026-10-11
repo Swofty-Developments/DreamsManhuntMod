@@ -3,9 +3,13 @@ package net.swofty.dreammanhunt.client.network;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.multiplayer.prediction.BlockStatePredictionHandler;
 import net.minecraft.network.chat.Component;
 import net.swofty.dreammanhunt.DreamManhunt;
 import net.swofty.dreammanhunt.api.SavestateInfo;
+import net.swofty.dreammanhunt.client.mixin.ui.BlockStatePredictionHandlerAccessor;
+import net.swofty.dreammanhunt.client.mixin.ui.ClientLevelPredictionAccessor;
 import net.swofty.dreammanhunt.client.state.ClientStateManager;
 import net.swofty.dreammanhunt.client.ui.CutMarker;
 import net.swofty.dreammanhunt.client.ui.SavestateMenuScreen;
@@ -57,6 +61,7 @@ public final class SavestateClientNetwork {
 			if (context.client().gui.screen() instanceof SavestateMenuScreen) {
 				context.client().gui.setScreen(null);
 			}
+			dropBlockPredictions(context.client());
 			ClientStateManager.get().onRestoreBegin(payload.id());
 			CutMarker.onRestoreBegin();
 			OBSERVERS.forEach(observer -> observer.onRestoreBegin(payload.id()));
@@ -124,6 +129,16 @@ public final class SavestateClientNetwork {
 
 	public static @Nullable String lastRestoreId() {
 		return lastRestoreId;
+	}
+
+	public static void dropBlockPredictions(Minecraft minecraft) {
+		ClientLevel level = minecraft.level;
+		if (level == null) {
+			return;
+		}
+		BlockStatePredictionHandler handler = ((ClientLevelPredictionAccessor) level).dreammanhunt$getBlockStatePredictionHandler();
+		((BlockStatePredictionHandlerAccessor) handler).dreammanhunt$getServerVerifiedStates().clear();
+		handler.onTeleport();
 	}
 
 	public static void addObserver(Observer observer) {

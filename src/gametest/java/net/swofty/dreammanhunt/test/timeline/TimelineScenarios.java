@@ -109,6 +109,8 @@ public final class TimelineScenarios {
 		list.add(TimelineScenario.of("ender_dragon", 100, env -> {
 			env.cmd("execute in minecraft:the_end run tp @p 0.5 75 40.5");
 		}).settle(100).area(net.minecraft.world.level.Level.END, new net.minecraft.core.BlockPos(0, 70, 0), 120));
+		list.addAll(WorldSyncScenarios.all());
+		PlayerSyncScenarios.addTo(list);
 		return list;
 	}
 }
