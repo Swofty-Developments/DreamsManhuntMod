@@ -120,8 +120,23 @@ public final class Reflect {
 			case float[] array -> java.util.Arrays.toString(array);
 			case double[] array -> java.util.Arrays.toString(array);
 			case boolean[] array -> java.util.Arrays.toString(array);
-			default -> value.getClass().isRecord() ? value.toString() : depth > 0 && !(value instanceof Level) ? nested(value, depth - 1) : value.getClass().getSimpleName();
+			default -> value.getClass().isRecord() ? describeRecord(value, depth) : depth > 0 && !(value instanceof Level) ? nested(value, depth - 1) : value.getClass().getSimpleName();
 		};
+	}
+
+	private static String describeRecord(Object value, int depth) {
+		StringBuilder builder = new StringBuilder(value.getClass().getSimpleName()).append('[');
+		for (java.lang.reflect.RecordComponent component : value.getClass().getRecordComponents()) {
+			try {
+				java.lang.reflect.Method accessor = component.getAccessor();
+				accessor.setAccessible(true);
+				Object inner = accessor.invoke(value);
+				builder.append(component.getName()).append('=').append(inner instanceof net.minecraft.network.syncher.EntityDataSerializer<?> ? "s" : describe(inner, Math.max(depth, 1))).append(' ');
+			} catch (ReflectiveOperationException | RuntimeException e) {
+				builder.append(component.getName()).append("=? ");
+			}
+		}
+		return builder.append(']').toString();
 	}
 
 	private static String describeRandom(RandomSource random) {
