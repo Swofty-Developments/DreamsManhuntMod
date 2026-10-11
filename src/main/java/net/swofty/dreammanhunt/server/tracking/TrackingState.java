@@ -167,7 +167,7 @@ public final class TrackingState {
 		entity.needsSync = tag.getBooleanOr("needsSync", entity.needsSync);
 		entity.syncPosition = tag.getBooleanOr("syncPosition", entity.syncPosition);
 		entity.syncVelocity = tag.getBooleanOr("syncVelocity", entity.syncVelocity);
-		if (!tag.getBooleanOr("dataDirty", true)) {
+		if (!(entity instanceof net.minecraft.world.entity.player.Player) && !tag.getBooleanOr("dataDirty", true)) {
 			entity.getEntityData().packDirty();
 		}
 		InterpolationTracker tracker = entity.getInterpolation().interpolationTracker();

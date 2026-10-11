@@ -21,7 +21,7 @@ import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.Nullable;
 
 final class EntityTrackingState {
-	private static final Set<String> EXCLUDED = Set.of("Entity.id");
+	private static final Set<String> EXCLUDED = Set.of("Entity.id", "Entity.removalReason");
 
 	private EntityTrackingState() {
 	}
@@ -56,15 +56,28 @@ final class EntityTrackingState {
 		return new Snapshot(entities);
 	}
 
+	private static final Set<Entity> APPLIED = java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+
 	static void apply(Minecraft minecraft, Snapshot snapshot) {
+		APPLIED.clear();
+		applyTo(minecraft, snapshot);
+	}
+
+	static void applyLateArrivals(Minecraft minecraft, Snapshot snapshot) {
+		applyTo(minecraft, snapshot);
+		APPLIED.clear();
+	}
+
+	private static void applyTo(Minecraft minecraft, Snapshot snapshot) {
 		for (Entity entity : minecraft.level.entitiesForRendering()) {
-			if (entity == minecraft.player) {
+			if (entity == minecraft.player || APPLIED.contains(entity)) {
 				continue;
 			}
 			EntitySnapshot saved = snapshot.entities().get(entity.getUUID());
 			if (saved == null || saved.type() != entity.getClass()) {
 				continue;
 			}
+			APPLIED.add(entity);
 			entity.setPos(saved.position());
 			try {
 				for (Map.Entry<Field, Object> entry : saved.primitives().entrySet()) {
@@ -101,7 +114,8 @@ final class EntityTrackingState {
 
 	private static boolean restorable(Field field) {
 		int modifiers = field.getModifiers();
-		return field.getType().isPrimitive() && !Modifier.isFinal(modifiers) && !Modifier.isStatic(modifiers) && !field.isSynthetic()
+		boolean valueLike = field.getType().isPrimitive() || field.getType().isEnum() || field.getType() == Vec3.class;
+		return valueLike && !Modifier.isFinal(modifiers) && !Modifier.isStatic(modifiers) && !field.isSynthetic()
 			&& !EXCLUDED.contains(field.getDeclaringClass().getSimpleName() + "." + field.getName());
 	}
 
@@ -156,7 +170,8 @@ final class EntityTrackingState {
 				}
 				return out;
 			}
-			if (!type.getName().startsWith("net.minecraft.world.entity.") && !type.getName().startsWith("net.minecraft.client.")) {
+			if (!type.getName().startsWith("net.minecraft.world.entity.") && !type.getName().startsWith("net.minecraft.client.")
+				&& !type.getName().startsWith("net.minecraft.core.PositionAndRotation")) {
 				return value;
 			}
 			Object copy = Reflect.allocate(type);
