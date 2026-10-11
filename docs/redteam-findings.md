@@ -353,3 +353,107 @@ Location: `client.state.ClientStateManager.onCapture`, which bound the pending c
 The server snapshots when it handles `SaveRequest`, one tick after the key press. After a key-initiated save, the restored server therefore ran one tick ahead of the restored client. The per-frame trace of `beacon` showed client game time 124 vs 123, with levels, `lastCheckY`, beam sections and list aliasing identical in both timelines. The differing pixels sat along the beam, whose scroll is `gameTime % 40 + partialTick`.
 
 Every client now captures when `Capture` arrives, the same moment as clients of a console save. `beacon` went from 0.29% to 0.000%. `low_health_shake` went from 0.38% to 0.000%: its one-frame heart blink (finding 9) was this offset too. `items_orbs_frames` and `mobs_land` (key + menu) and `rain` stay at 0.000%. The `e2e` and `clientstate` suites pass. The end-to-end check now compares the resume tick with the snapshot's hud tick instead of the key-press tick.
+
+## World and block simulation
+
+Yardstick: simulation, not pixels. `WorldSyncGameTest` (`scripts/client-gametest.sh worldsync`, `WORLDSYNC_SCENES=a,b` for a subset) builds a scene, waits until the set of ticking chunks has been stable for 40 ticks, saves with `/savestate save`, and records a fingerprint at the end of every server tick for N ticks. It then restores with `/savestate load` and records the same N ticks again, matched by game time.
+
+The fingerprint covers:
+- every non-air block in the scene box;
+- every block entity's full NBT;
+- every non-player entity's full NBT (position, motion, AI memories, ages, fuses, item counts);
+- the scheduled block and fluid ticks of the scene's chunks (type, relative position, delay, priority);
+- the overworld's block-ticking chunk set and level RNG seed.
+
+The scenes are:
+
+| Scene | What it exercises |
+|---|---|
+| `redstone` | Observer clock, sticky piston with slime, note block, bell, repeaters and comparator mid-pulse, piston pushing cobblestone, sculk sensor hearing all of it |
+| `hoppers` | Chest → hopper → furnace with fuel → hopper → chest, hopper chain into a chest, campfire cooking, brewing stand |
+| `growth` | Wheat and carrots on moist farmland at random tick speed 60 |
+| `fluids` | Fresh water and lava sources spreading over a step |
+| `falling_tnt` | A sand slab falling as falling blocks, two primed TNT blowing up planks, item drops |
+| `fire` | Fire spreading over planks and wool at random tick speed 30 |
+| `items_xp` | 10 item stacks and 10 XP orbs falling together and merging |
+| `mobs` | 18 cows, sheep and chickens wandering in a pen |
+| `spawning` | Night, difficulty normal, natural monster spawning over a stone plain |
+
+Final run on this branch merged with main `2a0dbed` (mining fix, mob AI restore, entity tracking), plus the fixes below: every scene matches on every tick.
+
+| Scene | Before | After |
+|---|---|---|
+| `redstone` | not measured before the piston fix | MATCH 120 ticks |
+| `hoppers` | MATCH 160 ticks | MATCH 160 ticks |
+| `growth` | diverges at +1 to +3 (farmland moisture, crop ages) | MATCH 200 ticks |
+| `fluids` | diverges at +1 (ticking chunk set) | MATCH 120 ticks |
+| `falling_tnt` | diverges at +43 (explosion drops, which blocks broke) | MATCH 120 ticks |
+| `fire` | diverges at +24 (where fire spread) | MATCH 160 ticks |
+| `items_xp` | MATCH in the scene box once the global tick count was dropped from the fingerprint | MATCH 160 ticks |
+| `mobs` | diverges at +1 (motion and rotation of every animal) | MATCH 160 ticks |
+| `spawning` | diverges at +1 (53 monsters spawn on the first tick of the restored timeline only) | MATCH 200 ticks |
+
+The timeline harness (`TIMELINE_STRICT=1 TIMELINE_SCENES=idle,idle_long,spawning scripts/client-gametest.sh timeline`, scenarios in `test/timeline/WorldSyncScenarios.java`) agrees. The level RNG divergence at tick 1 in `idle` is gone. The only subjects that still differ are at tick 0: the loaded chunk count (finding 32) and the player's synced data (finding 33).
+
+### 26. Moving pistons saved their previous progress (b) — fixed
+
+Location: `world/level/block/piston/PistonMovingBlockEntity.java:289-320,340`.
+
+`saveAdditional` writes `progressO`, but between ticks `progress` is already `progressO + 0.5`. On load both become `progressO`, so a restored piston finished one tick late, together with every block and entity it moves and the redstone that depends on it. `mixin/sync/PistonMovingBlockEntityMixin` writes the exact `progress` next to it (`dreammanhunt_progress`) and reads it back. The same applies to ordinary chunk reloads.
+
+### 27. Entity tick order after a restore was chunk load order (b) — fixed
+
+Location: `ServerLevel.entityTickList` (`world/level/entity/EntityTickList.java`, an insertion-ordered map).
+
+Entities that interact depend on who ticks first: pushing, item and XP orb merging, mobs targeting each other. `server.sync.EntityOrder` captures the UUID order of every level's tick list with the savestate and re-sorts the list at the first unfrozen tick.
+
+### 28. Block-ticking and spawning chunks were visited in hash-map order (b) — fixed
+
+Location: `server/level/DistanceManager.java:173-186`, `ServerChunkCache.java:363-395`.
+
+`forEachEntityTickingChunk` iterates a `Long2ByteOpenHashMap`. Its order depends on the map's capacity and insertion history, which a rebuilt level does not share. Random tick positions come from the shared `randValue` LCG in that order, so crops, fire and farmland changed in different chunks. The spawning list is shuffled with the level RNG, so its starting order matters too. `mixin/sync/ServerChunkCacheMixin` sorts both lists by chunk position. That order is a function of the chunk set only, so it is the same in both timelines.
+
+### 29. Level RNGs drawn during barrier ticks (b) — fixed
+
+The engine restores `Level.random`, the sound seed RNG and `randValue` while rebuilding the levels. Anything that draws from them during the frozen barrier ticks shifted them before the first real tick. `server.sync.LevelRandoms` captures them with the savestate and puts them back at the first unfrozen tick, together with the seed streams.
+
+### 30. Monster spawning flag not saved (b) — fixed
+
+Location: `server/MinecraftServer.java:1278-1294`, `ServerLevel.isSpawningMonsters` (`:1888`), `ServerChunkCache.spawnEnemies` (`:67`).
+
+`updateMobSpawningFlags` runs when the difficulty or the `spawn_monsters` rule changes, but not when `spawn_mobs` changes. A live level can therefore have `spawnEnemies = false` while its rules say spawning is on. A rebuilt level recomputes the flag from the rules. In the `spawning` scene the restored timeline spawned 53 monsters on its first tick while the uncut timeline spawned none. `server.sync.SpawnFlags` stores the flag and puts it back.
+
+### 31. The restore resumed before the saved ticking chunks were back (b) — fixed
+
+At the first unfrozen tick after a restore, only about 840 of 1369 chunks were loaded and 141 of 169 were block-ticking. Precipitation rolls (one level RNG draw per ticking chunk), random ticks and the spawning shuffle therefore drew a different number of values on tick 1. This is the `idle` level RNG divergence the engine agent reported.
+
+The savestate now records the block-ticking chunk set of every level. `server.sync.ChunkReadiness` holds the barrier until every one of those chunks ticks again and every entity from the saved tick list is loaded. It waits at most 5 s, then logs and resumes. The hook is one extra condition in `SavestateCoordinator.checkComplete`.
+
+### 32. Loaded but not ticking chunks differ after a restore — open, no simulation effect seen
+
+In the timeline harness the uncut timeline had 1369 chunks loaded against 841 after the restore. The extra chunks are outside simulation distance: chunks still lingering from earlier positions, or loaded by tickets the rebuild does not recreate. They do not tick. Their only possible effect is the natural mob cap, which counts entities in loaded chunks. No scenario diverged because of them, so the barrier does not wait for them.
+
+### 33. Player synced data differs at tick 0 in the timeline harness — handed off to engine
+
+`player data` in the harness shows four dirty `DataValue`s uncut against three restored, starting with health (id 9). This is the engine's player rebuild.
+
+### 34. Chunk loading in progress at save time — inherent
+
+When a save lands while chunks around a moving player are still being promoted to ticking, the uncut timeline promotes them as the worker and IO threads finish. That timing is not deterministic even between two uncut runs. After a restore, the barrier makes at least the saved set tick, and further chunks may already be ticking on the first tick. `WorldSyncGameTest` therefore lets chunk loading settle before it saves. Before that, `fluids`, `falling_tnt` and `spawning` showed 140 ticking chunks uncut against 168 restored.
+
+### 35. Cross-chunk scheduled tick ties are re-ordered on load — open, not observed
+
+Location: `world/ticks/LevelChunkTicks.java:109-115`.
+
+Saved ticks keep their order within a chunk. On load, though, each chunk numbers its ticks `-n..-1`, so ties with the same trigger tick and priority in different chunks interleave by that index, not by their original global order. New ticks after a restore also number from a fresh `Level.subTickCount`. A redstone build with simultaneous scheduled ticks across a chunk border would update in a different order. None of the scenes hit it. The fix is to store the global `subTickOrder` and `Level.subTickCount` and use them in `LevelChunkTicks.unpack`.
+
+### Checked and clean
+
+- Block events: drained within a tick.
+- Hopper `tickedGameTime`: only compared against the current tick, so a restored 0 behaves like the previous tick.
+- Brewing stand ingredient: `loadAdditional` restores it when brewing.
+- Furnace and campfire progress: saved.
+- Sculk sensor vibrations in flight: `VibrationSystem.Data` is saved.
+- Falling block `Time` and TNT `fuse`: saved.
+- Item and orb ages and pickup delays: saved.
+- All of these matched in the scenes above.
