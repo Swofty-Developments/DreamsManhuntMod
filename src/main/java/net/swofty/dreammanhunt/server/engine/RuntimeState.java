@@ -109,7 +109,6 @@ final class RuntimeState {
 		}
 		tag.put("levels", levels);
 		tag.put("block_entities", BlockEntityRuntime.capture(server));
-		tag.put("entity_tick_order", EntityTickOrder.capture(server));
 		ListTag players = new ListTag();
 		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
 			players.add(PlayerRuntime.capture(player));
@@ -148,8 +147,7 @@ final class RuntimeState {
 		((MinecraftServerAccessor) server).dreammanhunt$setTickCount(this.tag.getIntOr("server_tick_count", server.getTickCount()));
 	}
 
-	void applyEntityTickOrder(MinecraftServer server) {
-		EntityTickOrder.apply(server, this.tag.getListOrEmpty("entity_tick_order"));
+	void resolveAiReferences() {
 		AiState.resolveReferences();
 	}
 

@@ -116,6 +116,7 @@ public final class SeedStreams {
 			root.put("levelRandoms", net.swofty.dreammanhunt.server.sync.LevelRandoms.capture(current));
 			root.put("spawnFlags", net.swofty.dreammanhunt.server.sync.SpawnFlags.capture(current));
 			root.put("tickingChunks", net.swofty.dreammanhunt.server.sync.ChunkReadiness.capture(current));
+			root.put("tickOrder", net.swofty.dreammanhunt.server.sync.TickOrder.capture(current));
 		}
 		tag.put("randomroot", root);
 	}
@@ -126,6 +127,13 @@ public final class SeedStreams {
 
 	public static @Nullable CompoundTag scheduledServerState() {
 		return SERVER.scheduled;
+	}
+
+	public static void applyEntityOrderNow(MinecraftServer current) {
+		CompoundTag pending = SERVER.scheduled;
+		if (pending != null) {
+			net.swofty.dreammanhunt.server.sync.EntityOrder.apply(current, pending.getCompoundOrEmpty("entityOrder"));
+		}
 	}
 
 	public static void onServerTickStart(boolean frozen) {
@@ -139,6 +147,7 @@ public final class SeedStreams {
 			net.swofty.dreammanhunt.server.sync.EntityOrder.apply(current, scheduled.getCompoundOrEmpty("entityOrder"));
 			net.swofty.dreammanhunt.server.sync.LevelRandoms.apply(current, scheduled.getCompoundOrEmpty("levelRandoms"));
 			net.swofty.dreammanhunt.server.sync.SpawnFlags.apply(current, scheduled.getCompoundOrEmpty("spawnFlags"));
+			net.swofty.dreammanhunt.server.sync.TickOrder.apply(current, scheduled.getCompoundOrEmpty("tickOrder"));
 			for (Tag raw : scheduled.getListOrEmpty("tickers")) {
 				if (raw instanceof CompoundTag tickers) {
 					for (ServerLevel level : current.getAllLevels()) {

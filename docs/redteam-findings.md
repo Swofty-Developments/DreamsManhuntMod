@@ -441,11 +441,19 @@ In the timeline harness the uncut timeline had 1369 chunks loaded against 841 af
 
 When a save lands while chunks around a moving player are still being promoted to ticking, the uncut timeline promotes them as the worker and IO threads finish. That timing is not deterministic even between two uncut runs. After a restore, the barrier makes at least the saved set tick, and further chunks may already be ticking on the first tick. `WorldSyncGameTest` therefore lets chunk loading settle before it saves. Before that, `fluids`, `falling_tnt` and `spawning` showed 140 ticking chunks uncut against 168 restored.
 
-### 35. Cross-chunk scheduled tick ties are re-ordered on load — open, not observed
+### 35. Cross-chunk scheduled tick ties were re-ordered on load (b) — fixed
 
-Location: `world/ticks/LevelChunkTicks.java:109-115`.
+Location: `world/ticks/LevelChunkTicks.java:109-115`, `Level.subTickCount` (`world/level/Level.java:134,1092`).
 
-Saved ticks keep their order within a chunk. On load, though, each chunk numbers its ticks `-n..-1`, so ties with the same trigger tick and priority in different chunks interleave by that index, not by their original global order. New ticks after a restore also number from a fresh `Level.subTickCount`. A redstone build with simultaneous scheduled ticks across a chunk border would update in a different order. None of the scenes hit it. The fix is to store the global `subTickOrder` and `Level.subTickCount` and use them in `LevelChunkTicks.unpack`.
+On load, each chunk numbers its saved ticks `-n..-1`. Ticks due on the same game tick with the same priority in different chunks therefore ran in an order set by those per-chunk indices, not in the order they were scheduled. The `chunk_border_ticks` timeline scenario shows it: six rows of two delay-4 repeaters straddling a chunk border feed opposing sticky pistons that race for the border cell, next to a lava and a water source meeting at the border. The save lands one tick after the repeaters are powered.
+
+Without the fix, at +7 ticks the moving piston in the border cell of three rows came from the other side (`f.direction: A=WEST B=EAST`) and the scene's blocks diverged. `server.sync.TickOrder` now saves the `subTickOrder` of every pending block and fluid tick in the ticking chunks, keyed by type, position, trigger tick and priority, together with `Level.subTickCount`. At the first unfrozen tick it re-schedules the loaded ticks with their saved sub-tick order and puts the counter back. With the fix, `chunk_border_ticks` has no divergence beyond the two tick-0 subjects every scenario shows (findings 32 and 33).
+
+### 36. Two entity tick order re-sorts — merged into one
+
+The engine re-sorted `entityTickList` at the end of the rebuild (`EntityTickOrder`, 7f7ea84). At that point most entity sections have not loaded, so every entity whose chunk loads later was appended in load order. `server.sync.EntityOrder` applies the same saved order at the first unfrozen tick, after the barrier has waited for every saved entity (finding 31).
+
+The engine's class and capture are removed. The kept implementation is applied twice: once right after the rebuilt players are attached (one line in `SavestateEngine.rebuild`, so the barrier ticks and the harness's tick 0 already see the saved order), and again at the first unfrozen tick for late-loaded entities. With only the first-unfrozen-tick pass, the timeline harness showed `tickOrder` differing at tick 0 in every mob scenario; with both passes it no longer does.
 
 ### Checked and clean
 
