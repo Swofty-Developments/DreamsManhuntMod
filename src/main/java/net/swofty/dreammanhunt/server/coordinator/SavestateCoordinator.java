@@ -348,6 +348,10 @@ public final class SavestateCoordinator {
 		if (barrier == null || !barrier.pending.isEmpty()) {
 			return;
 		}
+		if (barrier.participants.isEmpty()) {
+			this.finish(barrier, false);
+			return;
+		}
 		if (!this.chunksDelivered(barrier) || !net.swofty.dreammanhunt.server.sync.ChunkReadiness.ready(this.server)) {
 			if (!barrier.waitingForChunks) {
 				barrier.waitingForChunks = true;
