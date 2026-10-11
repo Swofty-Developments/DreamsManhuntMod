@@ -10,6 +10,7 @@ import java.util.concurrent.ConcurrentSkipListMap;
 
 public final class TimelineRecorder {
 	private static boolean registered;
+	private static volatile int currentTick;
 	private static volatile Recording active;
 
 	public static final class Recording {
@@ -49,7 +50,18 @@ public final class TimelineRecorder {
 		}
 		registered = true;
 		ServerTickEvents.END_SERVER_TICK.register(TimelineRecorder::onServerTick);
+		if ("1".equals(System.getenv("TIMELINE_PIN_LEVEL_RNG"))) {
+			ServerTickEvents.START_SERVER_TICK.register(TimelineRecorder::pinLevelRandom);
+		}
 		ClientTickEvents.END_CLIENT_TICK.register(TimelineRecorder::onClientTick);
+	}
+
+	public static int currentTick() {
+		return currentTick;
+	}
+
+	static void setCurrentTick(int tick) {
+		currentTick = tick;
 	}
 
 	static void start(Recording recording) {
@@ -58,6 +70,19 @@ public final class TimelineRecorder {
 
 	static void stop() {
 		active = null;
+	}
+
+	private static void pinLevelRandom(MinecraftServer server) {
+		if (active == null) {
+			return;
+		}
+		for (net.minecraft.server.level.ServerLevel level : server.getAllLevels()) {
+			long seed = level.getGameTime() * 0x9E3779B97F4A7C15L ^ level.dimension().identifier().hashCode();
+			if (((net.swofty.dreammanhunt.mixin.server.LevelAccessor) level).dreammanhunt$getRandom() instanceof net.minecraft.world.level.levelgen.LegacyRandomSource random) {
+				((net.swofty.dreammanhunt.mixin.server.LegacyRandomSourceAccessor) random).dreammanhunt$getSeed().set(seed & 0xFFFFFFFFFFFFL);
+			}
+			((net.swofty.dreammanhunt.mixin.server.LevelAccessor) level).dreammanhunt$setRandValue((int) (seed >>> 16));
+		}
 	}
 
 	private static void onServerTick(MinecraftServer server) {
@@ -74,6 +99,7 @@ public final class TimelineRecorder {
 		if (tick <= 0) {
 			return;
 		}
+		currentTick = tick;
 		recording.server.put(tick, Probes.captureServer(server, recording.area));
 		recording.scenario.inputs().apply(server, recording.env, tick);
 	}

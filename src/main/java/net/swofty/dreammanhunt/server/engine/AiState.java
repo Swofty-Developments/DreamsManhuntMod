@@ -60,16 +60,21 @@ final class AiState {
 			tag.put("look", fields(mob.getLookControl(), Set.of()));
 			tag.put("jump", fields(mob.getJumpControl(), Set.of()));
 			tag.put("body", fields(get(mob, Mob.class, "bodyRotationControl"), Set.of()));
+			tag.put("malus", malus(mob));
 			tag.put("goals", goals(selector(mob, "goalSelector")));
 			tag.put("targets", goals(selector(mob, "targetSelector")));
 		}
 		if (entity instanceof LivingEntity living && hasBrainState(living)) {
 			tag.put("brain", BrainState.capture(living));
 		}
+		if (entity instanceof LivingEntity living) {
+			tag.put("combat", CombatState.capture(living));
+		}
 		return tag;
 	}
 
 	static void apply(Entity entity, CompoundTag tag, ServerLevel level) {
+		CANONICAL_PATHS.set(new java.util.HashMap<>());
 		try {
 			applyEntityData(entity, tag.getByteArray("data").orElse(new byte[0]));
 			apply(entity, tag.getCompoundOrEmpty("self"), level, ENTITY_DENY);
@@ -79,6 +84,7 @@ final class AiState {
 				apply(mob.getLookControl(), tag.getCompoundOrEmpty("look"), level, Set.of());
 				apply(mob.getJumpControl(), tag.getCompoundOrEmpty("jump"), level, Set.of());
 				apply(get(mob, Mob.class, "bodyRotationControl"), tag.getCompoundOrEmpty("body"), level, Set.of());
+				applyMalus(mob, tag.getCompoundOrEmpty("malus"));
 				applyGoals(selector(mob, "goalSelector"), tag.getListOrEmpty("goals"), level);
 				applyGoals(selector(mob, "targetSelector"), tag.getListOrEmpty("targets"), level);
 				sharePath(mob, selector(mob, "goalSelector"));
@@ -86,9 +92,12 @@ final class AiState {
 			}
 			if (entity instanceof LivingEntity living) {
 				tag.getCompound("brain").ifPresent(brain -> BrainState.apply(living, brain, level));
+				tag.getCompound("combat").ifPresent(combat -> CombatState.apply(living, combat, level));
 			}
 		} catch (RuntimeException e) {
 			LOGGER.warn("Could not restore AI state of {}", entity, e);
+		} finally {
+			CANONICAL_PATHS.remove();
 		}
 	}
 
@@ -135,6 +144,35 @@ final class AiState {
 		DEFERRED.clear();
 	}
 
+	@SuppressWarnings("unchecked")
+	private static CompoundTag malus(Mob mob) {
+		CompoundTag tag = new CompoundTag();
+		Object raw = get(mob, Mob.class, "pathfindingMalus");
+		if (raw instanceof Map<?, ?> map) {
+			for (Map.Entry<?, ?> entry : map.entrySet()) {
+				if (entry.getKey() instanceof Enum<?> type && entry.getValue() instanceof Float value) {
+					tag.putFloat(type.name(), value);
+				}
+			}
+		}
+		return tag;
+	}
+
+	@SuppressWarnings({"unchecked", "rawtypes"})
+	private static void applyMalus(Mob mob, CompoundTag tag) {
+		Object raw = get(mob, Mob.class, "pathfindingMalus");
+		if (!(raw instanceof Map map)) {
+			return;
+		}
+		map.clear();
+		for (String key : tag.keySet()) {
+			try {
+				map.put(net.minecraft.world.level.pathfinder.PathType.valueOf(key), tag.getFloatOr(key, 0.0F));
+			} catch (IllegalArgumentException ignored) {
+			}
+		}
+	}
+
 	private static boolean hasBrainState(LivingEntity living) {
 		Object memories = get(living.getBrain(), net.minecraft.world.entity.ai.Brain.class, "memories");
 		return memories instanceof Map<?, ?> map && !map.isEmpty();
@@ -176,6 +214,7 @@ final class AiState {
 			entry.putBoolean("running", wrapped.isRunning());
 			entry.put("fields", fields(wrapped.getGoal(), Set.of()));
 			entry.put("final", finalPrimitives(wrapped.getGoal()));
+			entry.put("deep", BrainState.walk(wrapped.getGoal()));
 			list.add(entry);
 		}
 		return list;
@@ -199,6 +238,7 @@ final class AiState {
 			}
 			apply(wrapped.getGoal(), entry.getCompoundOrEmpty("fields"), level, Set.of());
 			applyFinalPrimitives(wrapped.getGoal(), entry.getCompoundOrEmpty("final"));
+			BrainState.apply(wrapped.getGoal(), entry.getCompoundOrEmpty("deep"), level);
 			boolean running = entry.getBooleanOr("running", false);
 			set(wrapped, WrappedGoal.class, "isRunning", running);
 			if (running && lockedFlags != null) {
@@ -277,8 +317,24 @@ final class AiState {
 		}
 	}
 
+	@SuppressWarnings({"unchecked", "rawtypes"})
+	private static void resetUnlisted(Entity entity, java.util.Set<Integer> listed) {
+		Object items = get(entity.getEntityData(), SynchedEntityData.class, "itemsById");
+		if (!(items instanceof Object[] array)) {
+			return;
+		}
+		for (Object raw : array) {
+			if (!(raw instanceof SynchedEntityData.DataItem item) || listed.contains(item.getAccessor().id()) || item.isSetToDefault()) {
+				continue;
+			}
+			Object initial = get(item, SynchedEntityData.DataItem.class, "initialValue");
+			entity.getEntityData().set(item.getAccessor(), initial);
+		}
+	}
+
 	private static void applyEntityData(Entity entity, byte[] bytes) {
 		if (bytes.length == 0) {
+			resetUnlisted(entity, java.util.Set.of());
 			return;
 		}
 		RegistryFriendlyByteBuf buffer = new RegistryFriendlyByteBuf(Unpooled.wrappedBuffer(bytes), entity.registryAccess());
@@ -290,6 +346,11 @@ final class AiState {
 				values.add(SynchedEntityData.DataValue.read(buffer, id));
 			}
 			entity.getEntityData().assignValues(values);
+			java.util.Set<Integer> listed = new java.util.HashSet<>();
+			for (SynchedEntityData.DataValue<?> value : values) {
+				listed.add(value.id());
+			}
+			resetUnlisted(entity, listed);
 		} catch (RuntimeException e) {
 			LOGGER.warn("Could not restore entity data of {}", entity, e);
 		} finally {
@@ -394,6 +455,19 @@ final class AiState {
 			case net.minecraft.world.entity.EntityReference<?> reference -> tag.store("eref", UUIDUtil.CODEC, reference.getUUID());
 			case net.minecraft.world.level.levelgen.LegacyRandomSource random -> tag.putLong("seed", ((net.swofty.dreammanhunt.mixin.server.LegacyRandomSourceAccessor) random).dreammanhunt$getSeed().get());
 			case Path path -> tag.put("path", encodePath(path));
+			case java.util.Optional<?> optional -> {
+				if (optional.isEmpty()) {
+					tag.putBoolean("opt_empty", true);
+				} else {
+					Object inner = optional.get();
+					Tag encodedInner = encode(inner.getClass(), inner);
+					if (encodedInner == null) {
+						return null;
+					}
+					tag.put("opt", encodedInner);
+					tag.putString("opt_type", inner.getClass().getName());
+				}
+			}
 			default -> {
 				return null;
 			}
@@ -404,7 +478,7 @@ final class AiState {
 	private static boolean supported(Class<?> type) {
 		return type == Integer.class || type == Long.class || type == Float.class || type == Double.class || type == Boolean.class
 				|| type == String.class || type.isEnum() || type == Vec3.class || type == BlockPos.class || type == Vec3i.class || type == UUID.class
-				|| Entity.class.isAssignableFrom(type) || type == Path.class || type == net.minecraft.world.entity.EntityReference.class;
+				|| Entity.class.isAssignableFrom(type) || type == Path.class || type == net.minecraft.world.entity.EntityReference.class || type == java.util.Optional.class;
 	}
 
 	@SuppressWarnings({"unchecked", "rawtypes"})
@@ -449,7 +523,7 @@ final class AiState {
 		if (type == Vec3.class) {
 			return new Vec3(tag.getDoubleOr("x", 0.0), tag.getDoubleOr("y", 0.0), tag.getDoubleOr("z", 0.0));
 		}
-		if (type == BlockPos.class) {
+		if (type == BlockPos.class || type == BlockPos.MutableBlockPos.class) {
 			return BlockPos.of(tag.getLongOr("v", 0L));
 		}
 		if (type == UUID.class) {
@@ -464,6 +538,18 @@ final class AiState {
 		}
 		if (type == Path.class) {
 			return decodePath(tag.getCompoundOrEmpty("path"));
+		}
+		if (type == java.util.Optional.class) {
+			if (tag.getBooleanOr("opt_empty", false)) {
+				return java.util.Optional.empty();
+			}
+			try {
+				Class<?> innerType = Class.forName(tag.getStringOr("opt_type", ""));
+				Object inner = decode(innerType, tag.get("opt"));
+				return inner == Undecodable.INSTANCE || inner == null ? Undecodable.INSTANCE : java.util.Optional.of(inner);
+			} catch (ClassNotFoundException e) {
+				return Undecodable.INSTANCE;
+			}
 		}
 		if (type == net.minecraft.world.entity.EntityReference.class && tag.contains("eref")) {
 			return tag.read("eref", UUIDUtil.CODEC).map(net.minecraft.world.entity.EntityReference::of).orElse(null);
@@ -492,7 +578,23 @@ final class AiState {
 		return tag;
 	}
 
+	private static final ThreadLocal<Map<CompoundTag, Path>> CANONICAL_PATHS = new ThreadLocal<>();
+
 	static Path decodePath(CompoundTag tag) {
+		Map<CompoundTag, Path> canonical = CANONICAL_PATHS.get();
+		if (canonical != null) {
+			Path existing = canonical.get(tag);
+			if (existing != null) {
+				return existing;
+			}
+			Path created = decodePathFresh(tag);
+			canonical.put(tag.copy(), created);
+			return created;
+		}
+		return decodePathFresh(tag);
+	}
+
+	private static Path decodePathFresh(CompoundTag tag) {
 		List<Node> nodes = new ArrayList<>();
 		for (Tag element : tag.getListOrEmpty("nodes")) {
 			if (element instanceof CompoundTag entry) {
