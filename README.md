@@ -71,6 +71,7 @@ A Fabric mod for Minecraft 26.3 that savestates the entire game, create your ver
 ### World visuals
 
 - Every live particle, including emitters and block-break particles
+- Server entity trackers and client interpolation, so every entity is drawn where it would be without the cut
 - Mob animations: every animation timer, creeper swell, ender dragon flight and wings, and each mob's own animation counters
 - Phantom wing and witch nose phases
 - Dropped item bob and spin, XP orbs
@@ -94,6 +95,9 @@ A Fabric mod for Minecraft 26.3 that savestates the entire game, create your ver
 - Raids, maps, command storage and random sequences
 - Phantom, patrol and cat spawner timers
 - Rain and thunder transition levels in every dimension
+- Mob AI: goals, pathfinding, brain memories and behaviours, combat trackers, and the order entities tick in
+- Pistons mid-move, scheduled ticks in their original order, random tick and spawning order
+- Every saved chunk and entity ticking again before play resumes
 - Entity ids and the entity id counter
 - Per-entity tick count, hurt invulnerability, damage window, attack cooldown, jump delay, ambient sound timer and XP pickup delay
 
@@ -104,6 +108,8 @@ A Fabric mod for Minecraft 26.3 that savestates the entire game, create your ver
 - Inventory, ender chest, selected slot, cursor item and 2x2 crafting grid
 - Items in open menus: crafting table, anvil, smithing table, grindstone, stonecutter, loom, enchanting table, cartography table, beacon and trading
 - Items in use: spyglasses, bows, crossbows, food, shields
+- Block mining progress on server and client
+- Open containers, portal timers, fishing bobbers, chat session and spectator target
 - Health, food, saturation and exhaustion
 - XP, effects, spawn point, abilities and game mode
 - Advancements with criteria progress, recipes and statistics
@@ -187,7 +193,7 @@ The jar is written to `build/libs/`.
 Client gametests run headless:
 
 ```bash
-scripts/client-gametest.sh [smoke|clientstate|engine|e2e|audio|redteam|forensic|all]
+scripts/client-gametest.sh [smoke|clientstate|engine|e2e|audio|redteam|forensic|mining|playersync|worldsync|trackingsync|timeline|all]
 ```
 
 A dedicated server with five headless clients (runner, two hunters, a late joiner and a client without the mod's networking):
