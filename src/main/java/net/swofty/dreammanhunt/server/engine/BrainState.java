@@ -313,7 +313,8 @@ final class BrainState {
 			}
 			return false;
 		}
-		return name.startsWith("net.minecraft.world.entity.ai.behavior.") || name.startsWith("net.minecraft.world.entity.ai.sensing.");
+		return name.startsWith("net.minecraft.world.entity.ai.behavior.") || name.startsWith("net.minecraft.world.entity.ai.sensing.")
+				|| name.startsWith("net.minecraft.world.entity.ai.targeting.") || name.startsWith("net.minecraft.world.entity.ai.goal.");
 	}
 
 	private static String signature(Object entry) {

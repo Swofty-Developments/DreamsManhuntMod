@@ -66,6 +66,9 @@ final class AiState {
 		if (entity instanceof LivingEntity living && hasBrainState(living)) {
 			tag.put("brain", BrainState.capture(living));
 		}
+		if (entity instanceof LivingEntity living) {
+			tag.put("combat", CombatState.capture(living));
+		}
 		return tag;
 	}
 
@@ -86,6 +89,7 @@ final class AiState {
 			}
 			if (entity instanceof LivingEntity living) {
 				tag.getCompound("brain").ifPresent(brain -> BrainState.apply(living, brain, level));
+				tag.getCompound("combat").ifPresent(combat -> CombatState.apply(living, combat, level));
 			}
 		} catch (RuntimeException e) {
 			LOGGER.warn("Could not restore AI state of {}", entity, e);
@@ -176,6 +180,7 @@ final class AiState {
 			entry.putBoolean("running", wrapped.isRunning());
 			entry.put("fields", fields(wrapped.getGoal(), Set.of()));
 			entry.put("final", finalPrimitives(wrapped.getGoal()));
+			entry.put("deep", BrainState.walk(wrapped.getGoal()));
 			list.add(entry);
 		}
 		return list;
@@ -199,6 +204,7 @@ final class AiState {
 			}
 			apply(wrapped.getGoal(), entry.getCompoundOrEmpty("fields"), level, Set.of());
 			applyFinalPrimitives(wrapped.getGoal(), entry.getCompoundOrEmpty("final"));
+			BrainState.apply(wrapped.getGoal(), entry.getCompoundOrEmpty("deep"), level);
 			boolean running = entry.getBooleanOr("running", false);
 			set(wrapped, WrappedGoal.class, "isRunning", running);
 			if (running && lockedFlags != null) {
@@ -394,6 +400,19 @@ final class AiState {
 			case net.minecraft.world.entity.EntityReference<?> reference -> tag.store("eref", UUIDUtil.CODEC, reference.getUUID());
 			case net.minecraft.world.level.levelgen.LegacyRandomSource random -> tag.putLong("seed", ((net.swofty.dreammanhunt.mixin.server.LegacyRandomSourceAccessor) random).dreammanhunt$getSeed().get());
 			case Path path -> tag.put("path", encodePath(path));
+			case java.util.Optional<?> optional -> {
+				if (optional.isEmpty()) {
+					tag.putBoolean("opt_empty", true);
+				} else {
+					Object inner = optional.get();
+					Tag encodedInner = encode(inner.getClass(), inner);
+					if (encodedInner == null) {
+						return null;
+					}
+					tag.put("opt", encodedInner);
+					tag.putString("opt_type", inner.getClass().getName());
+				}
+			}
 			default -> {
 				return null;
 			}
@@ -404,7 +423,7 @@ final class AiState {
 	private static boolean supported(Class<?> type) {
 		return type == Integer.class || type == Long.class || type == Float.class || type == Double.class || type == Boolean.class
 				|| type == String.class || type.isEnum() || type == Vec3.class || type == BlockPos.class || type == Vec3i.class || type == UUID.class
-				|| Entity.class.isAssignableFrom(type) || type == Path.class || type == net.minecraft.world.entity.EntityReference.class;
+				|| Entity.class.isAssignableFrom(type) || type == Path.class || type == net.minecraft.world.entity.EntityReference.class || type == java.util.Optional.class;
 	}
 
 	@SuppressWarnings({"unchecked", "rawtypes"})
@@ -449,7 +468,7 @@ final class AiState {
 		if (type == Vec3.class) {
 			return new Vec3(tag.getDoubleOr("x", 0.0), tag.getDoubleOr("y", 0.0), tag.getDoubleOr("z", 0.0));
 		}
-		if (type == BlockPos.class) {
+		if (type == BlockPos.class || type == BlockPos.MutableBlockPos.class) {
 			return BlockPos.of(tag.getLongOr("v", 0L));
 		}
 		if (type == UUID.class) {
@@ -464,6 +483,18 @@ final class AiState {
 		}
 		if (type == Path.class) {
 			return decodePath(tag.getCompoundOrEmpty("path"));
+		}
+		if (type == java.util.Optional.class) {
+			if (tag.getBooleanOr("opt_empty", false)) {
+				return java.util.Optional.empty();
+			}
+			try {
+				Class<?> innerType = Class.forName(tag.getStringOr("opt_type", ""));
+				Object inner = decode(innerType, tag.get("opt"));
+				return inner == Undecodable.INSTANCE || inner == null ? Undecodable.INSTANCE : java.util.Optional.of(inner);
+			} catch (ClassNotFoundException e) {
+				return Undecodable.INSTANCE;
+			}
 		}
 		if (type == net.minecraft.world.entity.EntityReference.class && tag.contains("eref")) {
 			return tag.read("eref", UUIDUtil.CODEC).map(net.minecraft.world.entity.EntityReference::of).orElse(null);
