@@ -20,6 +20,7 @@
 	},
 	"mixins": [
 		"dreammanhunt.server.mixins.json",
+		"dreammanhunt.tracking.mixins.json",
 		"dreammanhunt.common.mixins.json",
 		{
 			"config": "dreammanhunt.client.mixins.json",

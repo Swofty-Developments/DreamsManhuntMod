@@ -1,0 +1,19 @@
+{
+	"required": true,
+	"package": "net.swofty.dreammanhunt.server.tracking.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"mixins": [
+		"ChunkMapAccessor",
+		"SavestateEngineMixin",
+		"ServerEntityAccessor",
+		"ServerEntityMixin",
+		"TrackedEntityAccessor",
+		"VecDeltaCodecAccessor"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	},
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}
