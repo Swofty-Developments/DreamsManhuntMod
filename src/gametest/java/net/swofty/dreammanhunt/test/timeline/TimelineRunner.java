@@ -44,6 +44,7 @@ public final class TimelineRunner {
 	}
 
 	private static final int MAX_EXTRA_FIELDS = Integer.parseInt(System.getenv().getOrDefault("TIMELINE_FIELDS", "12"));
+	private static final int[] TRACE_RANGE = traceRange();
 	private final ClientGameTestContext context;
 	private final TestServerContext server;
 	private final BlockPos origin;
@@ -67,17 +68,23 @@ public final class TimelineRunner {
 
 		String name = "timeline-" + scenario.name();
 		TimelineRecorder.Recording[] recordingA = new TimelineRecorder.Recording[1];
+		RngTrace.Trace[] traceA = new RngTrace.Trace[1];
+		RngTrace.Trace[] traceB = new RngTrace.Trace[1];
 		String id = this.server.computeOnServer(s -> {
 			TimelineEnv.run(s, "savestate save " + name);
 			SavestateInfo info = SavestateEngine.get(s).find(name).orElseThrow();
 			recordingA[0] = new TimelineRecorder.Recording(scenario, env, area, info.gameTime());
 			TimelineRecorder.setCurrentTick(0);
 			recordingA[0].server.put(0, Probes.captureServer(s, area));
+			if (TRACE_RANGE != null) {
+				traceA[0] = RngTrace.start(s, TRACE_RANGE[0], TRACE_RANGE[1]);
+			}
 			TimelineRecorder.start(recordingA[0]);
 			return info.id();
 		});
 		this.context.waitFor(mc -> recordingA[0].serverDone() && recordingA[0].clientDone(), scenario.ticks() * 4 + 200);
 		TimelineRecorder.stop();
+		RngTrace.stop();
 		this.context.waitTicks(20);
 
 		int restoresBefore = SavestateClientNetwork.restoresCompleted();
@@ -87,16 +94,36 @@ public final class TimelineRunner {
 			recordingB[0] = new TimelineRecorder.Recording(scenario, env, area, recordingA[0].baseGameTime);
 			TimelineRecorder.setCurrentTick(0);
 			recordingB[0].server.put(0, Probes.captureServer(s, area));
+			if (TRACE_RANGE != null) {
+				traceB[0] = RngTrace.start(s, TRACE_RANGE[0], TRACE_RANGE[1]);
+			}
 			TimelineRecorder.start(recordingB[0]);
 		});
 		this.context.waitFor(mc -> SavestateClientNetwork.restoresCompleted() > restoresBefore && recordingB[0].serverDone() && recordingB[0].clientDone(),
 				scenario.ticks() * 4 + 1200);
 		TimelineRecorder.stop();
+		RngTrace.stop();
+		if (traceA[0] != null && traceB[0] != null) {
+			for (String line : RngTrace.compare(traceA[0], traceB[0])) {
+				System.out.println("[timeline] rng " + scenario.name() + " " + line);
+			}
+		}
 		this.server.runOnServer(s -> SavestateEngine.get(s).delete(id));
 
 		Result result = new Result(scenario.name(), scenario.ticks(), compare(recordingA[0].server, recordingB[0].server), compare(recordingA[0].client, recordingB[0].client));
 		this.report(result);
 		return result;
+	}
+
+	private static int[] traceRange() {
+		String raw = System.getenv("TIMELINE_TRACE_RNG");
+		if (raw == null || raw.isBlank()) {
+			return null;
+		}
+		String[] parts = raw.trim().split("-");
+		int from = Integer.parseInt(parts[0]);
+		int to = parts.length > 1 ? Integer.parseInt(parts[1]) : from;
+		return new int[]{from, to};
 	}
 
 	private void prepare(TimelineEnv env, int radius) {

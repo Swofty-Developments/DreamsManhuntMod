@@ -23,6 +23,9 @@
 			"net.swofty.dreammanhunt.test.multiclient.MultiClientDriver"
 		]
 	},
+	"mixins": [
+		"dreammanhunt-test.mixins.json"
+	],
 	"depends": {
 		"dreammanhunt": "*"
 	}

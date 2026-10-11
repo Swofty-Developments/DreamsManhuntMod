@@ -1,0 +1,11 @@
+{
+	"required": true,
+	"package": "net.swofty.dreammanhunt.test.timeline.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"mixins": [
+		"LegacyRandomSourceTraceMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}
