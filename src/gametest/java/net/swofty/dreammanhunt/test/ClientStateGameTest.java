@@ -448,6 +448,15 @@ public final class ClientStateGameTest implements FabricClientGameTest {
 					+ " (hud +" + offset + ", client +" + (client - baseClient) + ")");
 			}
 			ticks.add(hud);
+			if (prefix.startsWith("motion")) {
+				String state = context.computeOnClient(mc -> String.format(java.util.Locale.ROOT, "pos=%.6f,%.6f,%.6f old=%.6f,%.6f,%.6f delta=%.6f,%.6f,%.6f yaw=%.4f ground=%s water=%s particles=%s",
+					mc.player.getX(), mc.player.getY(), mc.player.getZ(), mc.player.xo, mc.player.yo, mc.player.zo, mc.player.getDeltaMovement().x, mc.player.getDeltaMovement().y,
+					mc.player.getDeltaMovement().z, mc.player.getYRot(), mc.player.onGround(), mc.player.isInWater(), mc.particleEngine.countParticles())
+					+ " cracks=" + mc.level.destructionProgress().values().stream().flatMap(java.util.Collection::stream)
+						.map(p -> p.getId() + "@" + p.getPos().toShortString() + "#" + p.getProgress() + "/" + p.getUpdatedRenderTick()).toList()
+					+ " gameTime=" + mc.level.getGameTime() + " destroying=" + mc.gameMode.isDestroying());
+				System.out.printf("[clientstate] %s-t%d %s%n", prefix, offset, state);
+			}
 			shots.add(context.takeScreenshot(prefix + "-t" + offset));
 			long consumed = context.computeOnClient(ClientStateGameTest::clientTicks) - client;
 			System.out.printf("[clientstate] %s-t%d at hud tick %d, screenshot readback took %d tick(s)%n", prefix, offset, hud, consumed);
