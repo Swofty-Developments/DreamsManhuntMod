@@ -20,6 +20,10 @@ public final class TimelineGameTest implements FabricClientGameTest {
 		String filter = System.getenv().getOrDefault("TIMELINE_SCENES", "");
 		Set<String> only = filter.isBlank() ? Set.of() : Set.of(filter.split(","));
 		boolean strict = "1".equals(System.getenv("TIMELINE_STRICT"));
+		String deep = System.getenv("TIMELINE_DEEP");
+		if (deep != null && !deep.isBlank()) {
+			DeepProbe.install(Integer.parseInt(deep.trim()));
+		}
 		List<TimelineRunner.Result> results = new ArrayList<>();
 		try (TestSingleplayerContext singleplayer = context.worldBuilder().create()) {
 			singleplayer.getConnection().waitForChunksRender();

@@ -43,7 +43,7 @@ public final class TimelineRunner {
 		}
 	}
 
-	private static final int MAX_EXTRA_FIELDS = 12;
+	private static final int MAX_EXTRA_FIELDS = Integer.parseInt(System.getenv().getOrDefault("TIMELINE_FIELDS", "12"));
 	private final ClientGameTestContext context;
 	private final TestServerContext server;
 	private final BlockPos origin;
@@ -71,6 +71,7 @@ public final class TimelineRunner {
 			TimelineEnv.run(s, "savestate save " + name);
 			SavestateInfo info = SavestateEngine.get(s).find(name).orElseThrow();
 			recordingA[0] = new TimelineRecorder.Recording(scenario, env, area, info.gameTime());
+			TimelineRecorder.setCurrentTick(0);
 			recordingA[0].server.put(0, Probes.captureServer(s, area));
 			TimelineRecorder.start(recordingA[0]);
 			return info.id();
@@ -84,6 +85,7 @@ public final class TimelineRunner {
 		this.server.runOnServer(s -> {
 			TimelineEnv.run(s, "savestate load " + id);
 			recordingB[0] = new TimelineRecorder.Recording(scenario, env, area, recordingA[0].baseGameTime);
+			TimelineRecorder.setCurrentTick(0);
 			recordingB[0].server.put(0, Probes.captureServer(s, area));
 			TimelineRecorder.start(recordingB[0]);
 		});
