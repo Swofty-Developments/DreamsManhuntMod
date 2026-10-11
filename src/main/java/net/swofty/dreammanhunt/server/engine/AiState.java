@@ -317,8 +317,24 @@ final class AiState {
 		}
 	}
 
+	@SuppressWarnings({"unchecked", "rawtypes"})
+	private static void resetUnlisted(Entity entity, java.util.Set<Integer> listed) {
+		Object items = get(entity.getEntityData(), SynchedEntityData.class, "itemsById");
+		if (!(items instanceof Object[] array)) {
+			return;
+		}
+		for (Object raw : array) {
+			if (!(raw instanceof SynchedEntityData.DataItem item) || listed.contains(item.getAccessor().id()) || item.isSetToDefault()) {
+				continue;
+			}
+			Object initial = get(item, SynchedEntityData.DataItem.class, "initialValue");
+			entity.getEntityData().set(item.getAccessor(), initial);
+		}
+	}
+
 	private static void applyEntityData(Entity entity, byte[] bytes) {
 		if (bytes.length == 0) {
+			resetUnlisted(entity, java.util.Set.of());
 			return;
 		}
 		RegistryFriendlyByteBuf buffer = new RegistryFriendlyByteBuf(Unpooled.wrappedBuffer(bytes), entity.registryAccess());
@@ -330,6 +346,11 @@ final class AiState {
 				values.add(SynchedEntityData.DataValue.read(buffer, id));
 			}
 			entity.getEntityData().assignValues(values);
+			java.util.Set<Integer> listed = new java.util.HashSet<>();
+			for (SynchedEntityData.DataValue<?> value : values) {
+				listed.add(value.id());
+			}
+			resetUnlisted(entity, listed);
 		} catch (RuntimeException e) {
 			LOGGER.warn("Could not restore entity data of {}", entity, e);
 		} finally {
