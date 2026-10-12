@@ -195,7 +195,7 @@ The jar is written to `build/libs/`.
 Client gametests run headless:
 
 ```bash
-scripts/client-gametest.sh [smoke|clientstate|engine|e2e|audio|redteam|forensic|mining|playersync|worldsync|trackingsync|timeline|all]
+scripts/client-gametest.sh [smoke|clientstate|engine|e2e|audio|redteam|forensic|mining|barrier|playersync|worldsync|trackingsync|timeline|all]
 ```
 
 A dedicated server with five headless clients (runner, two hunters, a late joiner and a client without the mod's networking):

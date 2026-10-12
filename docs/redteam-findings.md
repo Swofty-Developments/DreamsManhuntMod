@@ -465,3 +465,80 @@ The engine's class and capture are removed. The kept implementation is applied t
 - Falling block `Time` and TNT `fuse`: saved.
 - Item and orb ages and pickup delays: saved.
 - All of these matched in the scenes above.
+
+## 1.1.1 follow-up: `spawners`, `elytra`, `spyglass`
+
+These runs use `REDTEAM_REPEAT=4` (new: runs the selected scenes four times in one client) on main `958e031`.
+
+| Scene | Round 1 | Round 2 | Round 3 | Round 4 |
+|---|---|---|---|---|
+| `spawners` | 1.28% | 0.000% | 4.89% | 0.000% |
+| `elytra` (fixed setup) | 0.73% (t40 only) | 0.000% | 0.000% | 0.000% |
+| `spyglass` | 1.94% (t4 only) | 1.94% (t4 only) | 0.000% | 0.000% |
+
+### 37. `spawners` residual is a flaky client-side mob position, not a regression — handed off to client-state/tracking
+
+The spawner in this scene spawns pigs (`RequiredPlayerRange 16`), and they wander next to the camera. In the failing rounds the only differences are:
+- a pig's position and pose right in front of the camera (round 3, 4.9% at t0, gone by t20);
+- a uniform sub-pixel shift of the whole view at t40 (round 1), from a pig pushing the player.
+
+Two of four rounds are 0.000% on the same build. The scene already showed it before 1.0.0 (2.66% in the follow-up full run with pigs in frame), so the 0.000% in the 1.0.0 matrix was a lucky round, and bisecting a 50% flake across 72 commits gives no signal.
+
+The server simulation of the same situation matches (`worldsync` mobs and spawning, timeline mob scenarios). The timeline harness shows the client side differing: client entity positions and rotations differ at client tick 1 in `zombies`, `villagers` and `villager_panic`, while the server matches on every tick. Look in `client.state.EntityTrackingState` (positions and interpolation handlers restored at Apply and on late arrivals) and in how the tracking restore's first movement packets after Resume land.
+
+### 38. `elytra` scene setup killed the player — fixed
+
+The scene teleported the player 40 blocks up during setup, and the 60-tick settle was a free fall into the ground. Now it equips the elytra with hidden resistance and fire resistance, teleports 80 blocks up just before the capture, and starts gliding. Three of four rounds are 0.000%; one round has 0.73% at +46 ticks only.
+
+### 39. `spyglass` scope shrinks for a moment after some restores — handed off to client-state
+
+In two of four rounds the frame at +10 ticks (and only that frame) shows a smaller scope opening. `Hud.scopeScale` restarts from 0.5 whenever `player.isScoping()` is false for a frame (`client/gui/Hud.java:278-283`) and then eases back to 1.125, so by +16 ticks the frames match again. That points at the local player not using the item for at least one frame after Resume: the use-key or item-use handover the engine's server-side item-use restore left to the client (`docs/server-state-inventory.md`, "Item in use").
+
+### 40. The barrier now waits for the whole saved chunk state; the late villager divergences are not caused by it
+
+The barrier (`server.sync.ChunkReadiness`, through the existing condition in `SavestateCoordinator.checkComplete`) now holds the restore, for up to 10 s, until all of the following match the save:
+- every chunk holder of any status is back;
+- every chunk that was FULL is FULL again;
+- every chunk with loaded POI sections has them loaded again (missing ones are prefetched, and pending POI loads must be drained);
+- the light engines have no queued work;
+- the ticking chunks and the saved entities from finding 31 are back.
+
+A release listener lets the timeline harness take its restored tick 0 at the moment the barrier lets go, instead of right after the rebuild. The harness's loaded chunk count now matches at tick 0 (1369 in both; before it was 1369 vs 841). The only tick-0 subject left is `player onGround`.
+
+`TIMELINE_REPEAT=4 TIMELINE_SCENES=villagers,villager_gossip,raid,armadillos,sniffers`, first server tick after 0 that diverges ("-" = matches for the whole scenario). The same subjects appear in all three runs: entity RNG, `nav.path`, `walk_target`, `look_target`, and the level RNG.
+
+| Scenario | Round | Before (main 160cc6e) | Chunks, full chunks, light | Plus POI |
+|---|---|---|---|---|
+| villagers | 1 / 2 / 3 / 4 | 3 / 1 / 10 / - | 70 / 1 / 2 / 15 | 1 / 12 / 50 / - |
+| villager_gossip | 1 / 2 / 3 / 4 | 1 / - / 143 / 1 | 1 / 1 / 38 / 1 | - / - / 1 / 2 |
+| raid | 1 / 2 / 3 / 4 | 41 / 87 / 14 / 32 | 59 / 21 / 49 / 83 | - / 12 / - / 2 |
+| armadillos | 1 / 2 / 3 / 4 | - / - / - / - | 9 / - / - / - | - / - / - / 5 |
+| sniffers | 1 / 2 / 3 / 4 | - / - / - / - | - / - / - / - | - / - / - / 26 |
+| rounds diverging | | 10 of 20 | 13 of 20 | 9 of 20 |
+
+The rate stays at about half, so a restore that resumes before chunks, POI or light have settled is not what makes these scenarios diverge. The divergence starts from tick 1 or 2 in many rounds, as an entity RNG, path or walk target difference. That points at something on the server thread whose outcome depends on wall-clock timing or on the order in which async work completes after a restore, rather than at missing world state. Logs: `build/timeline-v0.log`, `build/timeline-v1.log`, `build/timeline-v2.log`.
+
+### 41. Entities present at tick 0 in only one timeline — gone with the full-state barrier
+
+The engine agent's `TIMELINE_REPEAT=2` run on a build before finding 40 showed two creepers present at t0 in only one timeline of `idle_long_r1`, and items differing at t56. On that build the restored tick 0 was sampled right after the rebuild, when entity sections were still loading. Mobs that natural spawning had placed before the save were therefore not yet in the restored level, and anything that later depended on them (their drops, their spawn-cap share) diverged.
+
+The restore now resumes only once every entity of the saved tick list, every chunk holder and every full chunk is back (finding 40), and the harness samples tick 0 at that release. Nothing spawns during the barrier: natural spawning only runs in `tickChunks` when the level `runsNormally()`, and the barrier freezes it. Spawns between the server snapshot and the client capture cannot happen either, because the client captures on receipt of `Capture` and the server ticks nothing in between.
+
+`TIMELINE_REPEAT=4 TIMELINE_SCENES=idle_long,spawning` on main `054dfad`: all eight rounds have identical entity sets at t0, and the server matches on every tick for all 220 ticks of every round. The only t0 subject left is `player onGround` (the rebuilt `ServerPlayer`, engine side). The client-side tracking target and `codecBase` differences some rounds show belong to the protocol and tracking restore. Log: `build/timeline-spawning.log`.
+
+The late overworld level RNG divergence the engine agent traced to the spawn-candidate chunk set changing on a different tick in each timeline (around t43-63) did not reproduce in these eight rounds. With the barrier waiting for every chunk holder and full chunk, no chunk promotion is left in flight at the resume, so that source of wall-clock timing is gone for the chunks the save knew about. Chunk promotion triggered later, for example by a player moving into new chunks, still depends on worker-thread timing in vanilla too, so it is left alone.
+
+### 42. Barrier held for chunks nobody requests (user-reported, mid-jump saves) — fixed, with a regression test
+
+A savestate taken mid-jump or mid-sprint across a chunk border held the restore for about 11 s. The barrier from finding 40 waited for every chunk holder and full chunk from the save, including chunks that were unloading behind the player, which no restored ticket asks for. Main `9f97cdb` stopped waiting for holders and full chunks and lowered the cap to 3 s.
+
+`BarrierGameTest` (`scripts/client-gametest.sh barrier`) sprints the player across chunk borders for 150 ticks. It saves four times, alternating mid-jump (checked airborne) and mid-sprint, keeps running, restores, and fails if the chunk wait reaches 2 s or the barrier times out. Results on this branch: chunk wait 507-551 ms, restore command to client resume 2.8-3.2 s, no timeout, no "resuming without" warning.
+
+I tried a tighter condition: wait for saved holders, full chunks and poi chunks only while the restored distance manager gives them a ticket level that loads them. It also passes the barrier test (chunk wait 0.9-1.4 s), but it made the simulation worse. The extra frozen ticks let more chunks reach ticking status than existed at the save, and `idle_long` and `spawning` diverged on the level RNG at tick 1 in two of four rounds (`build/timeline-ticketwait.log`). With only the hot fix, those diverged in none of six rounds (`build/timeline-hotfix.log`).
+
+So holders and full chunks stay report-only. Only the poi wait keeps the ticket-level filter: it saves prefetching thousands of stale poi chunks (2510 in the barrier test) and does not change which chunks tick.
+
+Final checks on this branch:
+- `TIMELINE_REPEAT=3 TIMELINE_SCENES=idle_long,spawning`: the server matches at t0 and on every tick in all six rounds (`build/timeline-final.log`). Two `spawning` rounds show a client-only difference at t122, a client tracking presence and entity count.
+- `scripts/client-gametest.sh worldsync` (run with the ticket-level version): all nine scenes match.
+- `TIMELINE_REPEAT=2 TIMELINE_SCENES=idle,idle_long,spawning,villagers` with the ticket-level version: tick 0 clean everywhere. Apart from the tick-1 level RNG cases above, `villagers_r1` diverged at t82 (`look_target`), the known villager timing issue from finding 40.
