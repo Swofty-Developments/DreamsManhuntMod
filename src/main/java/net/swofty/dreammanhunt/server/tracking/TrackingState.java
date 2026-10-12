@@ -71,7 +71,9 @@ public final class TrackingState {
 	public static void arm(MinecraftServer server, Path dir) {
 		Path file = dir.resolve(FILE);
 		Map<UUID, CompoundTag> byUuid = new ConcurrentHashMap<>();
-		if (Files.isRegularFile(file)) {
+		if (!Files.isRegularFile(file)) {
+			LOGGER.warn("Savestate {} has no entity tracking state; entity trackers start fresh and clients will see entities snap", dir.getFileName());
+		} else {
 			try {
 				CompoundTag root = NbtIo.readCompressed(file, NbtAccounter.unlimitedHeap());
 				for (Tag raw : root.getListOrEmpty("entities")) {
@@ -102,9 +104,15 @@ public final class TrackingState {
 			return;
 		}
 		Entity entity = ((ServerEntityAccessor) serverEntity).dreammanhunt$getEntity();
-		CompoundTag tag = armed.remove(entity.getUUID());
+		CompoundTag tag = armed.get(entity.getUUID());
 		if (tag != null && entity.getType().toString().equals(tag.getStringOr("type", ""))) {
 			applyEntity(serverEntity, entity, tag);
+		}
+	}
+
+	public static void onBarrierLifted() {
+		if (!pending.isEmpty()) {
+			pending = Map.of();
 		}
 	}
 

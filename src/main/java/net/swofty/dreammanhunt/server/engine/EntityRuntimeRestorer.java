@@ -22,12 +22,13 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class EntityRuntimeRestorer {
 	private static volatile Map<UUID, CompoundTag> pending = new ConcurrentHashMap<>();
-	private static final Map<Entity, float[]> RIDE_ROTATIONS = java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
+	private static final Map<Entity, float[]> RIDE_ROTATIONS = java.util.Collections.synchronizedMap(new java.util.IdentityHashMap<>());
 
 	private EntityRuntimeRestorer() {
 	}
 
 	static void arm(Map<UUID, CompoundTag> runtime) {
+		RIDE_ROTATIONS.clear();
 		pending = new ConcurrentHashMap<>(runtime);
 	}
 
@@ -108,6 +109,9 @@ public final class EntityRuntimeRestorer {
 			living.yHeadRotO = saved[5];
 			living.yBodyRot = saved[6];
 			living.yBodyRotO = saved[7];
+		}
+		if (entity instanceof net.minecraft.world.entity.Mob rider) {
+			AiState.shareVehiclePath(rider);
 		}
 	}
 

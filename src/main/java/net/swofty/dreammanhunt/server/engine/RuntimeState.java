@@ -91,6 +91,7 @@ final class RuntimeState {
 			levelTag.putFloat("o_thunder_level", accessor.dreammanhunt$getOThunderLevel());
 			levelTag.putFloat("thunder_level", accessor.dreammanhunt$getThunderLevel());
 			levelTag.putInt("empty_time", ((ServerLevelAccessor) level).dreammanhunt$getEmptyTime());
+			levelTag.put("dragon_fight", DragonState.captureFight(level));
 			CompoundTag spawners = new CompoundTag();
 			for (CustomSpawner spawner : ((ServerLevelAccessor) level).dreammanhunt$getCustomSpawners()) {
 				switch (spawner) {
@@ -148,6 +149,19 @@ final class RuntimeState {
 		((MinecraftServerAccessor) server).dreammanhunt$setTickCount(this.tag.getIntOr("server_tick_count", server.getTickCount()));
 	}
 
+	void attachDragonFights(MinecraftServer server) {
+		for (Tag element : this.tag.getListOrEmpty("levels")) {
+			if (!(element instanceof CompoundTag levelTag)) {
+				continue;
+			}
+			for (ServerLevel level : server.getAllLevels()) {
+				if (level.dimension().identifier().toString().equals(levelTag.getStringOr("dimension", ""))) {
+					DragonState.attachFightPlayers(server, level, levelTag.getCompoundOrEmpty("dragon_fight"));
+				}
+			}
+		}
+	}
+
 	void armSectionOrder(MinecraftServer server) {
 		SectionOrder.register();
 		SectionOrder.arm(this.tag.getCompoundOrEmpty("section_order"));
@@ -187,6 +201,7 @@ final class RuntimeState {
 			levelTag.getFloat("o_thunder_level").ifPresent(accessor::dreammanhunt$setOThunderLevel);
 			levelTag.getFloat("thunder_level").ifPresent(accessor::dreammanhunt$setThunderLevel);
 			levelTag.getInt("empty_time").ifPresent(((ServerLevelAccessor) level)::dreammanhunt$setEmptyTime);
+			DragonState.applyFight(level, levelTag.getCompoundOrEmpty("dragon_fight"));
 			CompoundTag spawners = levelTag.getCompoundOrEmpty("spawners");
 			for (CustomSpawner spawner : ((ServerLevelAccessor) level).dreammanhunt$getCustomSpawners()) {
 				switch (spawner) {

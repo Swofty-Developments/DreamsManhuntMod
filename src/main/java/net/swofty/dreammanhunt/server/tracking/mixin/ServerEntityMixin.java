@@ -28,6 +28,8 @@ public abstract class ServerEntityMixin {
 	private void dreammanhunt$holdDuringRestore(CallbackInfo ci) {
 		if (SavestateCoordinator.isPlayerTickBlocked(this.level.getServer())) {
 			ci.cancel();
+		} else {
+			TrackingState.onBarrierLifted();
 		}
 	}
 }

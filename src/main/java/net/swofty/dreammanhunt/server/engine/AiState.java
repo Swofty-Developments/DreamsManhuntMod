@@ -64,10 +64,10 @@ final class AiState {
 		tag.put("self", fields(entity, ENTITY_DENY));
 		tag.putByteArray("data", entityData(entity));
 		if (entity instanceof Mob mob) {
-			tag.put("navigation", fields(mob.getNavigation(), Set.of()));
-			tag.put("move", fields(mob.getMoveControl(), Set.of()));
-			tag.put("look", fields(mob.getLookControl(), Set.of()));
-			tag.put("jump", fields(mob.getJumpControl(), Set.of()));
+			tag.put("navigation", fields(get(mob, Mob.class, "navigation"), Set.of()));
+			tag.put("move", fields(get(mob, Mob.class, "moveControl"), Set.of()));
+			tag.put("look", fields(get(mob, Mob.class, "lookControl"), Set.of()));
+			tag.put("jump", fields(get(mob, Mob.class, "jumpControl"), Set.of()));
 			tag.put("body", fields(get(mob, Mob.class, "bodyRotationControl"), Set.of()));
 			tag.put("malus", malus(mob));
 			tag.put("goals", goals(selector(mob, "goalSelector")));
@@ -79,6 +79,9 @@ final class AiState {
 		if (entity instanceof LivingEntity living) {
 			tag.put("combat", CombatState.capture(living));
 		}
+		if (entity instanceof net.minecraft.world.entity.boss.enderdragon.EnderDragon dragon) {
+			tag.put("dragon", DragonState.capture(dragon));
+		}
 		return tag;
 	}
 
@@ -89,10 +92,10 @@ final class AiState {
 			applyEntityData(entity, tag.getByteArray("data").orElse(new byte[0]));
 			apply(entity, tag.getCompoundOrEmpty("self"), level, ENTITY_DENY);
 			if (entity instanceof Mob mob) {
-				apply(mob.getNavigation(), tag.getCompoundOrEmpty("navigation"), level, Set.of());
-				apply(mob.getMoveControl(), tag.getCompoundOrEmpty("move"), level, Set.of());
-				apply(mob.getLookControl(), tag.getCompoundOrEmpty("look"), level, Set.of());
-				apply(mob.getJumpControl(), tag.getCompoundOrEmpty("jump"), level, Set.of());
+				apply(get(mob, Mob.class, "navigation"), tag.getCompoundOrEmpty("navigation"), level, Set.of());
+				apply(get(mob, Mob.class, "moveControl"), tag.getCompoundOrEmpty("move"), level, Set.of());
+				apply(get(mob, Mob.class, "lookControl"), tag.getCompoundOrEmpty("look"), level, Set.of());
+				apply(get(mob, Mob.class, "jumpControl"), tag.getCompoundOrEmpty("jump"), level, Set.of());
 				apply(get(mob, Mob.class, "bodyRotationControl"), tag.getCompoundOrEmpty("body"), level, Set.of());
 				applyMalus(mob, tag.getCompoundOrEmpty("malus"));
 				applyGoals(selector(mob, "goalSelector"), tag.getListOrEmpty("goals"), level);
@@ -103,6 +106,9 @@ final class AiState {
 			if (entity instanceof LivingEntity living) {
 				tag.getCompound("brain").ifPresent(brain -> BrainState.apply(living, brain, level));
 				tag.getCompound("combat").ifPresent(combat -> CombatState.apply(living, combat, level));
+			}
+			if (entity instanceof net.minecraft.world.entity.boss.enderdragon.EnderDragon dragon) {
+				tag.getCompound("dragon").ifPresent(state -> DragonState.apply(dragon, state, level));
 			}
 		} catch (RuntimeException e) {
 			LOGGER.warn("Could not restore AI state of {}", entity, e);
@@ -184,13 +190,29 @@ final class AiState {
 		}
 	}
 
+	static CompoundTag captureFields(Object owner) {
+		return fields(owner, Set.of());
+	}
+
+	static void applyFields(Object owner, CompoundTag tag, ServerLevel level) {
+		apply(owner, tag, level, Set.of());
+	}
+
 	private static boolean hasBrainState(LivingEntity living) {
 		Object memories = get(living.getBrain(), net.minecraft.world.entity.ai.Brain.class, "memories");
 		return memories instanceof Map<?, ?> map && !map.isEmpty();
 	}
 
+	static void shareVehiclePath(Mob rider) {
+		sharePath(rider, selector(rider, "goalSelector"), rider.getNavigation().getPath());
+		sharePath(rider, selector(rider, "targetSelector"), rider.getNavigation().getPath());
+	}
+
 	private static void sharePath(Mob mob, GoalSelector selector) {
-		Path navigationPath = mob.getNavigation().getPath();
+		sharePath(mob, selector, ((net.minecraft.world.entity.ai.navigation.PathNavigation) get(mob, Mob.class, "navigation")).getPath());
+	}
+
+	private static void sharePath(Mob mob, GoalSelector selector, Path navigationPath) {
 		if (selector == null || navigationPath == null) {
 			return;
 		}
@@ -219,6 +241,17 @@ final class AiState {
 		if (selector == null) {
 			return list;
 		}
+		Object disabled = get(selector, GoalSelector.class, "disabledFlags");
+		if (disabled instanceof java.util.Set<?> flags) {
+			CompoundTag entry = new CompoundTag();
+			entry.putString("class", "@disabledFlags");
+			ListTag names = new ListTag();
+			for (Object flag : flags) {
+				names.add(net.minecraft.nbt.StringTag.valueOf(((Enum<?>) flag).name()));
+			}
+			entry.put("flags", names);
+			list.add(entry);
+		}
 		for (WrappedGoal wrapped : selector.getAvailableGoals()) {
 			CompoundTag entry = new CompoundTag();
 			entry.putString("class", wrapped.getGoal().getClass().getName());
@@ -231,12 +264,29 @@ final class AiState {
 		return list;
 	}
 
-	@SuppressWarnings("unchecked")
+	@SuppressWarnings({"unchecked", "rawtypes"})
 	private static void applyGoals(GoalSelector selector, ListTag list, ServerLevel level) {
 		if (selector == null || list.isEmpty()) {
 			return;
 		}
 		List<WrappedGoal> goals = new ArrayList<>(selector.getAvailableGoals());
+		if (!list.isEmpty() && "@disabledFlags".equals(list.getCompoundOrEmpty(0).getStringOr("class", ""))) {
+			Object disabled = get(selector, GoalSelector.class, "disabledFlags");
+			if (disabled instanceof java.util.Set set) {
+				set.clear();
+				for (Tag name : list.getCompoundOrEmpty(0).getListOrEmpty("flags")) {
+					try {
+						set.add(Goal.Flag.valueOf(name.asString().orElse("")));
+					} catch (IllegalArgumentException ignored) {
+					}
+				}
+			}
+			ListTag rest = new ListTag();
+			for (int i = 1; i < list.size(); i++) {
+				rest.add(list.get(i));
+			}
+			list = rest;
+		}
 		if (goals.size() != list.size()) {
 			return;
 		}
