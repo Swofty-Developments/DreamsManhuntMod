@@ -24,4 +24,10 @@ public abstract class HudMixin {
 	private long dm$visualHealthClock(Operation<Long> original) {
 		return VisualClock.millis();
 	}
+
+	@WrapOperation(method = "extractCameraOverlays", at = @At(value = "INVOKE", target = "Lnet/minecraft/util/Mth;lerp(FFF)F"))
+	private float dm$settleScopeScale(float alpha, float from, float to, Operation<Float> original) {
+		float value = original.call(alpha, from, to);
+		return to == 1.125F && Math.abs(value - to) < 1.0E-4F ? to : value;
+	}
 }

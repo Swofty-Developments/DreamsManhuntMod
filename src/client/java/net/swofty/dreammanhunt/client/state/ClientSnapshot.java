@@ -524,8 +524,8 @@ public final class ClientSnapshot {
 		boolean using = tag.getBooleanOr("usingItem", false);
 		if (using && tag.contains("usingItemHand")) {
 			InteractionHand hand = InteractionHand.valueOf(tag.getStringOr("usingItemHand", InteractionHand.MAIN_HAND.name()));
-			if (player.isUsingItem() && player.getUsedItemHand() != hand) {
-				player.stopUsingItem();
+			if (player.isUsingItem() && (player.getUsedItemHand() != hand || player.getUseItem().isEmpty())) {
+				local.dm$setStartedUsingItem(false);
 			}
 			if (!player.isUsingItem()) {
 				player.startUsingItem(hand);

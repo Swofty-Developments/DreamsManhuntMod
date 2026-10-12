@@ -21,12 +21,16 @@ import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.Nullable;
 
 final class EntityTrackingState {
+	private static final Set<Class<?>> NESTED_HOLDERS = Set.of(net.minecraft.world.entity.ai.control.BodyRotationControl.class);
 	private static final Set<String> EXCLUDED = Set.of("Entity.id", "Entity.removalReason");
 
 	private EntityTrackingState() {
 	}
 
-	record EntitySnapshot(Entity source, Class<?> type, Map<Field, Object> primitives, Vec3 position, Vec3 delta, Vec3 codecBase, @Nullable InterpolationHandler handler) {
+	record Nested(Field holder, Field field, Object value) {
+	}
+
+	record EntitySnapshot(Entity source, Class<?> type, Map<Field, Object> primitives, List<Nested> nested, Vec3 position, Vec3 delta, Vec3 codecBase, @Nullable InterpolationHandler handler) {
 	}
 
 	record Snapshot(Map<UUID, EntitySnapshot> entities) {
@@ -39,10 +43,20 @@ final class EntityTrackingState {
 				continue;
 			}
 			Map<Field, Object> primitives = new HashMap<>();
+			List<Nested> nested = new ArrayList<>();
 			try {
 				for (Field field : Reflect.instanceFields(entity.getClass())) {
 					if (restorable(field)) {
 						primitives.put(field, field.get(entity));
+					} else if (NESTED_HOLDERS.contains(field.getType())) {
+						Object holder = field.get(entity);
+						if (holder != null) {
+							for (Field inner : Reflect.instanceFields(holder.getClass())) {
+								if (inner.getType().isPrimitive() && !Modifier.isFinal(inner.getModifiers())) {
+									nested.add(new Nested(field, inner, inner.get(holder)));
+								}
+							}
+						}
 					}
 				}
 			} catch (IllegalAccessException e) {
@@ -50,7 +64,7 @@ final class EntityTrackingState {
 			}
 			InterpolationHandler handler = entity.getInterpolation();
 			InterpolationHandler handlerCopy = handler == InterpolationHandler.NO_OP ? null : (InterpolationHandler) new Copier(minecraft, entity, entity).copy(handler);
-			entities.put(entity.getUUID(), new EntitySnapshot(entity, entity.getClass(), primitives, entity.position(), entity.getDeltaMovement(),
+			entities.put(entity.getUUID(), new EntitySnapshot(entity, entity.getClass(), primitives, nested, entity.position(), entity.getDeltaMovement(),
 				codecBase(entity.getPositionCodec()), handlerCopy));
 		}
 		return new Snapshot(entities);
@@ -82,6 +96,12 @@ final class EntityTrackingState {
 			try {
 				for (Map.Entry<Field, Object> entry : saved.primitives().entrySet()) {
 					entry.getKey().set(entity, entry.getValue());
+				}
+				for (Nested entry : saved.nested()) {
+					Object holder = entry.holder().get(entity);
+					if (holder != null) {
+						entry.field().set(holder, entry.value());
+					}
 				}
 			} catch (IllegalAccessException e) {
 				throw new IllegalStateException(e);
