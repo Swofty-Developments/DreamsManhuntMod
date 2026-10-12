@@ -376,6 +376,7 @@ public final class SavestateCoordinator {
 		});
 		for (ServerPlayer player : this.server.getPlayerList().getPlayers()) {
 			PlayerSync.linkFishingHook(player);
+			PlayerSync.forgetTeleportAccept(player);
 		}
 		ServerTickRateManager tickRate = this.server.tickRateManager();
 		FROZEN.remove(tickRate);

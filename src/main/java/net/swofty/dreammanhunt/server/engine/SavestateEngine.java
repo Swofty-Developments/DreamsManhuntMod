@@ -60,6 +60,7 @@ public final class SavestateEngine {
 		}
 		long started = System.nanoTime();
 		RuntimeState runtime = RuntimeState.capture(this.server);
+		markTickingBlockEntityChunks();
 		this.server.saveEverything(true, true, true);
 
 		ServerLevel overworld = this.server.overworld();
@@ -92,6 +93,20 @@ public final class SavestateEngine {
 		}
 		LOGGER.info("Saved savestate {} ({}) in {} ms", id, name, (System.nanoTime() - started) / 1_000_000L);
 		return info;
+	}
+
+	private void markTickingBlockEntityChunks() {
+		for (ServerLevel level : this.server.getAllLevels()) {
+			for (net.minecraft.world.level.block.entity.TickingBlockEntity ticker : new ArrayList<>(((net.swofty.dreammanhunt.mixin.server.LevelAccessor) level).dreammanhunt$getBlockEntityTickers())) {
+				if (ticker.isRemoved()) {
+					continue;
+				}
+				net.minecraft.world.level.chunk.LevelChunk chunk = level.getChunkSource().getChunkNow(ticker.getPos().getX() >> 4, ticker.getPos().getZ() >> 4);
+				if (chunk != null) {
+					chunk.markUnsaved();
+				}
+			}
+		}
 	}
 
 	public List<SavestateInfo> list() {
@@ -193,6 +208,7 @@ public final class SavestateEngine {
 		state.applyServerCounters(this.server);
 		state.applyTickRate(this.server);
 		players.attachAll(detached, state.playerRuntime(), preferLive);
+		state.attachDragonFights(this.server);
 		state.resolveAiReferences();
 		state.armSectionOrder(this.server);
 		net.swofty.dreammanhunt.randomroot.SeedStreams.applyEntityOrderNow(this.server);
