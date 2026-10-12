@@ -5,6 +5,7 @@ import net.minecraft.server.ServerScoreboard;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.players.PlayerList;
 import net.minecraft.stats.ServerStatsCounter;
+import net.minecraft.world.level.storage.PlayerDataStorage;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 import org.spongepowered.asm.mixin.gen.Invoker;
@@ -15,6 +16,9 @@ import java.util.UUID;
 
 @Mixin(PlayerList.class)
 public interface PlayerListAccessor {
+	@Accessor("playerIo")
+	PlayerDataStorage dreammanhunt$getPlayerIo();
+
 	@Accessor("players")
 	List<ServerPlayer> dreammanhunt$getPlayers();
 

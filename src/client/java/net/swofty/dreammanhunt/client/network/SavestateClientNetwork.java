@@ -4,6 +4,11 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.multiplayer.ClientPacketListener;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.network.protocol.game.ServerboundClientTickEndPacket;
+import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.client.multiplayer.prediction.BlockStatePredictionHandler;
 import net.minecraft.network.chat.Component;
 import net.swofty.dreammanhunt.DreamManhunt;
@@ -68,6 +73,7 @@ public final class SavestateClientNetwork {
 		});
 		ClientPlayNetworking.registerGlobalReceiver(SavestatePayloads.RestoreApply.TYPE, (payload, context) -> {
 			String id = payload.id();
+			ServerView serverView = ServerView.of(context.client().player);
 			AtomicBoolean sent = new AtomicBoolean();
 			ClientStateManager.get().onRestoreApply(id, () -> {
 				if (!sent.compareAndSet(false, true)) {
@@ -76,6 +82,7 @@ public final class SavestateClientNetwork {
 				}
 				Runnable send = () -> Minecraft.getInstance().execute(() -> {
 					if (ClientPlayNetworking.canSend(SavestatePayloads.RestoreReady.TYPE)) {
+						resendRestoredMovement(Minecraft.getInstance(), serverView);
 						ClientPlayNetworking.send(new SavestatePayloads.RestoreReady(id));
 						OBSERVERS.forEach(observer -> observer.onReadySent(id));
 					}
@@ -129,6 +136,31 @@ public final class SavestateClientNetwork {
 
 	public static @Nullable String lastRestoreId() {
 		return lastRestoreId;
+	}
+
+	private record ServerView(Vec3 position, float yRot, float xRot) {
+		static @Nullable ServerView of(@Nullable LocalPlayer player) {
+			return player == null ? null : new ServerView(player.position(), player.getYRot(), player.getXRot());
+		}
+	}
+
+	private static void resendRestoredMovement(Minecraft minecraft, @Nullable ServerView server) {
+		LocalPlayer player = minecraft.player;
+		ClientPacketListener connection = minecraft.getConnection();
+		if (server == null || player == null || connection == null || player.isPassenger()) {
+			return;
+		}
+		boolean moved = player.position().distanceToSqr(server.position()) > 0.0;
+		boolean turned = player.getYRot() != server.yRot() || player.getXRot() != server.xRot();
+		if (!moved && !turned) {
+			return;
+		}
+		DreamManhunt.LOGGER.info("Restored position differs from the server's by {} blocks, resending it before the resume",
+				Math.sqrt(player.position().distanceToSqr(server.position())));
+		connection.send(ServerboundClientTickEndPacket.INSTANCE);
+		connection.send(new ServerboundMovePlayerPacket.PosRot(player.getX(), player.getY(), player.getZ(), player.getYRot(), player.getXRot(),
+				player.onGround(), player.horizontalCollision));
+		connection.send(ServerboundClientTickEndPacket.INSTANCE);
 	}
 
 	public static void dropBlockPredictions(Minecraft minecraft) {

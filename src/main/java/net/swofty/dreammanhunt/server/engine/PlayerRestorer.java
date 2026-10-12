@@ -137,7 +137,9 @@ final class PlayerRestorer {
 	private ServerPlayer attach(Detached entry, Map<UUID, CompoundTag> snapshotRuntime, boolean preferLive) {
 		ServerPlayer old = entry.player();
 		UUID uuid = old.getUUID();
-		Optional<CompoundTag> snapshotData = preferLive ? Optional.empty() : this.playerList.loadPlayerData(old.nameAndId());
+		// The player's own file, never PlayerList.loadPlayerData: for the singleplayer owner that loads the file of the
+		// world's recorded owner UUID, which in downloaded or shared maps is someone else's stale player data.
+		Optional<CompoundTag> snapshotData = preferLive ? Optional.empty() : this.accessor.dreammanhunt$getPlayerIo().load(old.nameAndId());
 		CompoundTag runtime = snapshotData.isPresent() ? snapshotRuntime.get(uuid) : entry.liveRuntime();
 		if (snapshotData.isPresent() || preferLive) {
 			PlayerAdvancements advancements = this.accessor.dreammanhunt$getAdvancements().remove(uuid);

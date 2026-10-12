@@ -60,6 +60,7 @@ public final class PlayerSync {
 	private static final int SPIN_ATTACK_FLAG = 4;
 	private static boolean reopening;
 	private static final Map<ServerPlayer, Component> TITLES = new WeakHashMap<>();
+	private static final Map<ServerPlayer, CompoundTag> AWAITING_TELEPORT_ACCEPT = new WeakHashMap<>();
 
 	private PlayerSync() {
 	}
@@ -83,6 +84,7 @@ public final class PlayerSync {
 	public static CompoundTag capture(ServerPlayer player) {
 		CompoundTag tag = new CompoundTag();
 		tag.put("fields", PlayerFields.capture(player));
+		player.mainSupportingBlockPos.ifPresent(pos -> tag.store("supporting_block", BlockPos.CODEC, pos));
 		Input input = player.getLastClientInput();
 		CompoundTag inputTag = new CompoundTag();
 		inputTag.putBoolean("forward", input.forward());
@@ -188,6 +190,8 @@ public final class PlayerSync {
 
 	public static void apply(ServerPlayer player, CompoundTag tag) {
 		tag.getCompound("fields").ifPresent(fields -> PlayerFields.apply(player, fields));
+		player.mainSupportingBlockPos = tag.read("supporting_block", BlockPos.CODEC);
+		AWAITING_TELEPORT_ACCEPT.put(player, tag);
 		tag.getCompound("input").ifPresent(input -> player.setLastClientInput(new Input(
 				input.getBooleanOr("forward", false),
 				input.getBooleanOr("backward", false),
@@ -286,6 +290,20 @@ public final class PlayerSync {
 		if (!hooks.isEmpty()) {
 			player.fishing = hooks.getFirst();
 		}
+	}
+
+	public static void afterTeleportAccepted(ServerPlayer player) {
+		CompoundTag tag = AWAITING_TELEPORT_ACCEPT.remove(player);
+		if (tag == null) {
+			return;
+		}
+		tag.getCompound("fields").ifPresent(fields -> PlayerFields.apply(player, fields));
+		player.mainSupportingBlockPos = tag.read("supporting_block", BlockPos.CODEC);
+		((ServerGamePacketListenerSyncAccessor) player.connection).dreammanhunt$sync$setClientIsFloating(tag.getBooleanOr("client_floating", false));
+	}
+
+	static void forgetTeleportAccept(ServerPlayer player) {
+		AWAITING_TELEPORT_ACCEPT.remove(player);
 	}
 
 	static void applyCamera(ServerPlayer player, CompoundTag tag) {
