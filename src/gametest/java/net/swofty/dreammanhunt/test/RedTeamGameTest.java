@@ -60,16 +60,20 @@ public final class RedTeamGameTest implements FabricClientGameTest {
 			this.origin = context.computeOnClient(mc -> mc.player.blockPosition());
 			server.runCommand("gamerule spawn_mobs false");
 			server.runCommand("difficulty peaceful");
-			for (Scene scene : scenes()) {
-				if (!only.isEmpty() && !only.contains(scene.name)) {
-					continue;
-				}
-				try {
-					this.runScene(context, server, scene);
-				} catch (Throwable t) {
-					t.printStackTrace();
-					this.results.put(scene.name, "ERROR " + t);
-					resetClient(context);
+			int repeat = Integer.parseInt(System.getenv().getOrDefault("REDTEAM_REPEAT", "1"));
+			for (int round = 0; round < repeat; round++) {
+				for (Scene base : scenes()) {
+					if (!only.isEmpty() && !only.contains(base.name)) {
+						continue;
+					}
+					Scene scene = round == 0 ? base : new Scene(base.name + "#" + round, base.setup, base.preCapture, base.preRestore, base.timeline, base.viaMenu, base.settle);
+					try {
+						this.runScene(context, server, scene);
+					} catch (Throwable t) {
+						t.printStackTrace();
+						this.results.put(scene.name, "ERROR " + t);
+						resetClient(context);
+					}
 				}
 			}
 		}
@@ -325,8 +329,10 @@ public final class RedTeamGameTest implements FabricClientGameTest {
 		}).menu());
 		list.add(new Scene("elytra", env -> {
 			env.cmd("item replace entity @p armor.chest with minecraft:elytra");
-			env.tp(0, 40, 0, 0, 10);
+			env.cmd("effect give @p minecraft:resistance 600 4 true");
+			env.cmd("effect give @p minecraft:fire_resistance 600 0 true");
 		}).before(env -> {
+			env.tp(0, 80, 0, 0, 10);
 			env.context.waitTicks(3);
 			env.context.getInput().pressKey(options -> options.keyJump);
 			env.context.waitTicks(2);

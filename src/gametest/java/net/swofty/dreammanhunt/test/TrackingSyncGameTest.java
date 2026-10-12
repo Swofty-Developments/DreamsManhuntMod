@@ -46,6 +46,10 @@ public final class TrackingSyncGameTest implements FabricClientGameTest {
 			TestServerContext server = singleplayer.getServer();
 			context.waitTicks(20);
 			BlockPos o = context.computeOnClient(mc -> mc.player.blockPosition());
+			if ("race".equals(System.getenv("TRACKING_MODE"))) {
+				runRaceProbe(context, server, o);
+				return;
+			}
 			server.runCommand("gamerule spawn_mobs false");
 			server.runCommand("gamerule advance_time false");
 			server.runCommand("difficulty easy");
@@ -102,6 +106,104 @@ public final class TrackingSyncGameTest implements FabricClientGameTest {
 		}
 	}
 
+	private static void runRaceProbe(ClientGameTestContext context, TestServerContext server, BlockPos o) {
+		server.runCommand("gamerule spawn_mobs false");
+		server.runCommand("gamerule advance_time false");
+		server.runCommand("time set 6000");
+		server.runCommand("weather clear");
+		server.runCommand("kill @e[type=!minecraft:player]");
+		int x = o.getX();
+		int y = o.getY();
+		int z = o.getZ();
+		server.runCommand(String.format(Locale.ROOT, "tp @p %d.5 %d %d.5 0 20", x, y, z));
+		server.runCommand(String.format(Locale.ROOT, "setblock %d %d %d minecraft:spawner{SpawnData:{entity:{id:\"minecraft:pig\"}},RequiredPlayerRange:16s}", x - 1, y, z + 3));
+		context.waitTicks(600);
+		Set<String> before = ids(server);
+		server.runCommand("savestate save trackingrace");
+		server.waitFor(s -> SavestateEngine.get(s).list().size() > before.size(), 200);
+		Set<String> after = ids(server);
+		after.removeAll(before);
+		String id = after.iterator().next();
+		context.waitFor(mc -> ClientStateManager.get().has(id), 200);
+		int capturedHud = context.computeOnClient(mc -> ClientStateManager.get().snapshot(id)).getCompoundOrEmpty("timing").getIntOr("hudTickCount", -1);
+		List<Timeline> runs = new ArrayList<>();
+		runs.add(recordQuiet(context, server, capturedHud + 1, RACE_TICKS));
+		for (int round = 0; round < 3; round++) {
+			int restoresBefore = SavestateClientNetwork.restoresCompleted();
+			server.runCommand("savestate load " + id);
+			context.waitFor(mc -> SavestateClientNetwork.restoresCompleted() > restoresBefore, 1200);
+			runs.add(recordQuiet(context, server, capturedHud + 1, RACE_TICKS));
+		}
+		for (int a = 0; a < runs.size(); a++) {
+			for (int b = a + 1; b < runs.size(); b++) {
+				raceCompare((a == 0 ? "A" : "R" + a) + " vs R" + b, runs.get(a), runs.get(b));
+			}
+		}
+		server.runCommand("savestate delete " + id);
+	}
+
+	private static final int RACE_TICKS = 120;
+
+	private static Timeline recordQuiet(ClientGameTestContext context, TestServerContext server, int base, int ticks) {
+		List<Map<String, double[]>> client = new ArrayList<>();
+		List<Map<String, double[]>> serverSide = new ArrayList<>();
+		for (int offset = 0; offset <= ticks; offset++) {
+			int target = base + offset;
+			while (context.computeOnClient(TrackingSyncGameTest::hudTicks) < target) {
+				context.waitTick();
+			}
+			client.add(context.computeOnClient(mc -> positions(mc.level.entitiesForRendering(), mc.player)));
+			serverSide.add(server.computeOnServer(s -> positions(s.overworld().getAllEntities(), null)));
+		}
+		return new Timeline(client, serverSide, List.of());
+	}
+
+	private static void raceCompare(String label, Timeline a, Timeline b) {
+		Set<String> keys = new java.util.TreeSet<>();
+		for (Map<String, double[]> m : a.client()) {
+			keys.addAll(m.keySet());
+		}
+		for (String key : keys) {
+			int serverFirst = -1;
+			int clientFirst = -1;
+			int clientOnly = 0;
+			StringBuilder detail = new StringBuilder();
+			for (int t = 0; t < Math.min(a.client().size(), b.client().size()); t++) {
+				boolean serverDiff = differs(a.server().get(t).get(key), b.server().get(t).get(key));
+				boolean clientDiff = differs(a.client().get(t).get(key), b.client().get(t).get(key));
+				if (serverDiff && serverFirst < 0) {
+					serverFirst = t;
+				}
+				if (clientDiff && clientFirst < 0) {
+					clientFirst = t;
+					if (t < 3) {
+						System.out.printf(Locale.ROOT, "[trackingrace] %s %s t%d A=%s B=%s%n", label, key, t, java.util.Arrays.toString(a.client().get(t).get(key)), java.util.Arrays.toString(b.client().get(t).get(key)));
+					}
+					double[] ca = a.client().get(t).get(key);
+					double[] cb = b.client().get(t).get(key);
+					detail.append(ca == null || cb == null ? "presence" : String.format(Locale.ROOT, "pos %.5f rot %.3f body %.3f->%.3f", Math.abs(ca[0] - cb[0]) + Math.abs(ca[2] - cb[2]),
+						Math.abs(ca[3] - cb[3]), ca[9], cb[9]));
+				}
+				if (clientDiff && (serverFirst < 0 || t < serverFirst)) {
+					clientOnly++;
+				}
+			}
+			System.out.printf(Locale.ROOT, "[trackingrace] %s %-22s serverFirst=%d clientFirst=%d clientOnlyTicks=%d %s%n", label, key, serverFirst, clientFirst, clientOnly, detail);
+		}
+	}
+
+	private static boolean differs(double[] a, double[] b) {
+		if (a == null || b == null) {
+			return a != b;
+		}
+		for (int i = 0; i < a.length; i++) {
+			if (Math.abs(a[i] - b[i]) > 1e-9) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private record Timeline(List<Map<String, double[]>> client, List<Map<String, double[]>> server, List<Path> frames) {
 	}
 
@@ -137,7 +239,8 @@ public final class TrackingSyncGameTest implements FabricClientGameTest {
 			}
 			String key = entity.getType().toShortString() + "/" + entity.getUUID().toString().substring(0, 8);
 			double head = entity instanceof LivingEntity living ? living.getYHeadRot() : 0.0;
-			out.put(key, new double[]{entity.getX(), entity.getY(), entity.getZ(), entity.getYRot(), entity.getXRot(), head, entity.xo, entity.yo, entity.zo});
+			double body = entity instanceof LivingEntity living ? living.yBodyRot : 0.0;
+			out.put(key, new double[]{entity.getX(), entity.getY(), entity.getZ(), entity.getYRot(), entity.getXRot(), head, entity.xo, entity.yo, entity.zo, body});
 		}
 		return out;
 	}
@@ -193,7 +296,7 @@ public final class TrackingSyncGameTest implements FabricClientGameTest {
 				pos = Math.max(pos, Math.abs(x[i] - y[i]));
 			}
 			double rot = 0;
-			for (int i : new int[]{3, 4, 5}) {
+			for (int i : new int[]{3, 4, 5, 9}) {
 				rot = Math.max(rot, Math.abs(net.minecraft.util.Mth.wrapDegrees(x[i] - y[i])));
 			}
 			if ((pos > 1e-9 || rot > 1e-6) && !first.containsKey(key)) {

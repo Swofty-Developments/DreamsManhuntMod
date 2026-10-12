@@ -33,5 +33,9 @@ public final class TrackingSyncScenarios {
 	}
 
 	static void addTo(List<TimelineScenario> list) {
+		list.add(TimelineScenario.of("tracking-spawner", 80, env -> {
+			env.cmd("time set 6000");
+			env.block(-1, 0, 3, "minecraft:spawner{SpawnData:{entity:{id:\"minecraft:pig\"}},RequiredPlayerRange:16s}");
+		}).settle(60));
 	}
 }

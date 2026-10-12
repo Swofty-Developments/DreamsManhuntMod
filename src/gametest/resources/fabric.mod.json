@@ -17,6 +17,7 @@
 			"net.swofty.dreammanhunt.test.ForensicGameTest",
 			"net.swofty.dreammanhunt.test.MiningGameTest",
 			"net.swofty.dreammanhunt.test.timeline.TimelineGameTest",
+			"net.swofty.dreammanhunt.test.BarrierGameTest",
 			"net.swofty.dreammanhunt.test.PlayerSyncGameTest"
 		],
 		"client": [

@@ -33,11 +33,15 @@ public final class TimelineGameTest implements FabricClientGameTest {
 			server.runCommand("gamerule spawn_mobs false");
 			server.runCommand("difficulty normal");
 			TimelineRunner runner = new TimelineRunner(context, server, origin);
-			for (TimelineScenario scenario : TimelineScenarios.all()) {
-				if (!only.isEmpty() && !only.contains(scenario.name())) {
-					continue;
+			int repeat = Integer.parseInt(System.getenv().getOrDefault("TIMELINE_REPEAT", "1").trim());
+			for (int round = 0; round < repeat; round++) {
+				for (TimelineScenario base : TimelineScenarios.all()) {
+					if (!only.isEmpty() && !only.contains(base.name())) {
+						continue;
+					}
+					TimelineScenario scenario = round == 0 ? base : base.renamed(base.name() + "_r" + round);
+					results.add(runner.run(scenario, 24));
 				}
-				results.add(runner.run(scenario, 24));
 			}
 		}
 		System.out.println("[timeline] ===== summary =====");

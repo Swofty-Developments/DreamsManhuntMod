@@ -141,12 +141,13 @@ public final class Probes {
 		fields.put("aggressive", Boolean.toString(mob.isAggressive()));
 		goals("goal", (GoalSelector) Reflect.get(mob, "goalSelector"), fields);
 		goals("targetGoal", (GoalSelector) Reflect.get(mob, "targetSelector"), fields);
-		Path path = mob.getNavigation().getPath();
+		Object navigation = Reflect.get(mob, "navigation");
+		Path path = navigation instanceof net.minecraft.world.entity.ai.navigation.PathNavigation own ? own.getPath() : null;
 		fields.put("nav.path", path == null ? "none" : Reflect.describePath(path));
-		Reflect.dumpFields(mob.getNavigation(), "nav", fields, 0);
-		Reflect.dumpFields(mob.getMoveControl(), "move", fields, 0);
-		Reflect.dumpFields(mob.getLookControl(), "look", fields, 0);
-		Reflect.dumpFields(mob.getJumpControl(), "jump", fields, 0);
+		Reflect.dumpFields(navigation, "nav", fields, 0);
+		Reflect.dumpFields(Reflect.get(mob, "moveControl"), "move", fields, 0);
+		Reflect.dumpFields(Reflect.get(mob, "lookControl"), "look", fields, 0);
+		Reflect.dumpFields(Reflect.get(mob, "jumpControl"), "jump", fields, 0);
 	}
 
 	private static void goals(String prefix, GoalSelector selector, Map<String, String> fields) {

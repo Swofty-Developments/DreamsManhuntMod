@@ -36,6 +36,7 @@ public final class RngTrace {
 	}
 
 	private static final Set STACK_SKIP = new Set();
+	private static final int FRAMES = Integer.parseInt(System.getenv().getOrDefault("TIMELINE_TRACE_FRAMES", "3"));
 	private static volatile Trace current;
 
 	private RngTrace() {
@@ -135,7 +136,7 @@ public final class RngTrace {
 				builder.append(" < ");
 			}
 			builder.append(cls.substring(cls.lastIndexOf('.') + 1)).append('#').append(frame.getMethodName()).append(':').append(frame.getLineNumber());
-			if (++taken >= 3) {
+			if (++taken >= FRAMES) {
 				break;
 			}
 		}

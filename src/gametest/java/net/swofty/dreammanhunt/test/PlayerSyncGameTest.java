@@ -11,6 +11,8 @@ import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.multiplayer.prediction.BlockStatePredictionHandler;
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.protocol.game.ServerboundClientTickEndPacket;
+import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -54,6 +56,7 @@ public final class PlayerSyncGameTest implements FabricClientGameTest {
 			context.waitTicks(20);
 			TestServerContext server = singleplayer.getServer();
 			sneakAcrossRestore(context, server);
+			inFlightMoveAcrossRestore(context, server);
 			inFlightPredictionAcrossRestore(context, server);
 			openChestAcrossRestore(context, server);
 			portalTimerAcrossRestore(context, server);
@@ -128,6 +131,38 @@ public final class PlayerSyncGameTest implements FabricClientGameTest {
 		check(clientCrouching == serverShift && serverShift == serverInput, "server and client agree on sneaking after the restore");
 		check(serverPose == Pose.CROUCHING, "server pose is crouching after the restore (" + serverPose + ")");
 		context.getInput().releaseShift();
+		context.waitTicks(5);
+	}
+
+	private static void inFlightMoveAcrossRestore(ClientGameTestContext context, TestServerContext server) {
+		context.waitTicks(5);
+		double[] start = context.computeOnClient(mc -> new double[]{mc.player.getX(), mc.player.getY(), mc.player.getZ()});
+		String[] id = new String[1];
+		context.runOnClient(mc -> {
+			mc.player.setPos(start[0] + 0.25, start[1], start[2]);
+			mc.getConnection().send(new ServerboundMovePlayerPacket.Pos(start[0] + 0.25, start[1], start[2], mc.player.onGround(), false));
+			mc.getConnection().send(ServerboundClientTickEndPacket.INSTANCE);
+		});
+		id[0] = server.computeOnServer(s -> SavestateCoordinator.get(s).save(Requester.of(s.createCommandSourceStack()), "inflight").orElseThrow().id());
+		double savedServerX = server.computeOnServer(s -> SavestateCoordinator.get(s).engine().find(id[0]).isPresent() ? player(s).getX() : Double.NaN);
+		context.waitTicks(5);
+		boolean inFlight = Math.abs(savedServerX - (start[0] + 0.25)) > 1.0E-6;
+		System.out.printf("[playersync] in-flight move at the save: server x %.4f, client x %.4f (in flight: %s)%n", savedServerX, start[0] + 0.25, inFlight);
+		context.runOnClient(mc -> mc.player.setPos(start[0] + 1.5, start[1], start[2]));
+		context.waitTicks(5);
+		double[] firstTick = new double[]{Double.NaN};
+		int before = SavestateClientNetwork.restoresCompleted();
+		server.runOnServer(s -> SavestateCoordinator.get(s).restore(Requester.of(s.createCommandSourceStack()), id[0]));
+		server.waitFor(s -> {
+			if (!SavestateCoordinator.get(s).isBusy() && Double.isNaN(firstTick[0])) {
+				firstTick[0] = player(s).getX();
+			}
+			return !Double.isNaN(firstTick[0]);
+		}, 20 * 60);
+		context.waitFor(mc -> SavestateClientNetwork.restoresCompleted() > before, 20 * 60);
+		double clientX = context.computeOnClient(mc -> mc.player.getX());
+		System.out.printf("[playersync] after restore: server x at the first resumed tick %.4f, client x %.4f%n", firstTick[0], clientX);
+		check(Math.abs(firstTick[0] - (start[0] + 0.25)) < 1.0E-6, "the server player starts the resumed timeline where the client was at the save");
 		context.waitTicks(5);
 	}
 

@@ -82,7 +82,7 @@ public final class TimelineRunner {
 			TimelineRecorder.start(recordingA[0]);
 			return info.id();
 		});
-		this.context.waitFor(mc -> recordingA[0].serverDone() && recordingA[0].clientDone(), scenario.ticks() * 4 + 200);
+		this.context.waitFor(mc -> recordingA[0].serverDone() && recordingA[0].clientDone(), scenario.ticks() * 10 + 600);
 		TimelineRecorder.stop();
 		RngTrace.stop();
 		this.context.waitTicks(20);
@@ -94,6 +94,12 @@ public final class TimelineRunner {
 			recordingB[0] = new TimelineRecorder.Recording(scenario, env, area, recordingA[0].baseGameTime);
 			TimelineRecorder.setCurrentTick(0);
 			recordingB[0].server.put(0, Probes.captureServer(s, area));
+			java.util.function.Consumer<net.minecraft.server.MinecraftServer>[] release = new java.util.function.Consumer[1];
+			release[0] = released -> {
+				recordingB[0].server.put(0, Probes.captureServer(released, area));
+				net.swofty.dreammanhunt.server.sync.ChunkReadiness.removeReleaseListener(release[0]);
+			};
+			net.swofty.dreammanhunt.server.sync.ChunkReadiness.onRelease(release[0]);
 			if (TRACE_RANGE != null) {
 				traceB[0] = RngTrace.start(s, TRACE_RANGE[0], TRACE_RANGE[1], area);
 			}

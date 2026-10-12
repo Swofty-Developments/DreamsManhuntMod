@@ -310,6 +310,9 @@ public final class EngineGameTest implements FabricClientGameTest {
 		if (label.equals("sp") && failures.isEmpty()) {
 			this.runNetherUseCheck(context, server, failures);
 		}
+		if (label.equals("sp") && failures.isEmpty()) {
+			this.runForeignOwnerCheck(context, server, failures);
+		}
 		server.runOnServer(s -> SavestateEngine.get(s).delete(id));
 		if (!failures.isEmpty()) {
 			throw new AssertionError("[" + label + "] savestate restore mismatches: " + String.join("; ", failures));
@@ -441,6 +444,75 @@ public final class EngineGameTest implements FabricClientGameTest {
 		context.waitFor(mc -> mc.player != null && mc.gui.screen() == null, 600);
 		context.waitTicks(5);
 		context.runOnClient(mc -> check(failures, count(mc.player.getInventory(), Items.IRON_SWORD) == 1 && count(mc.player.getInventory(), Items.FLINT) == 4, "client sees returned anvil items"));
+	}
+
+	private void runForeignOwnerCheck(ClientGameTestContext context, TestServerContext server, List<String> failures) {
+		server.runCommand("execute in minecraft:overworld run tp @a 3.5 -60 -6.5 90 0");
+		context.waitFor(mc -> mc.level != null && mc.level.dimension() == Level.OVERWORLD && mc.player != null && mc.gui.screen() == null, 600);
+		context.waitTicks(10);
+		UUID foreignOwner = UUID.fromString("f9e7e93f-0000-4000-8000-000000000001");
+		UUID[] previousOwner = new UUID[1];
+		server.runOnServer(s -> {
+			previousOwner[0] = s.getWorldData().getSinglePlayerUUID();
+			setRecordedOwner(s, foreignOwner);
+			ServerPlayer player = firstPlayer(s);
+			try (net.minecraft.util.ProblemReporter.ScopedCollector reporter = new net.minecraft.util.ProblemReporter.ScopedCollector(org.slf4j.LoggerFactory.getLogger("EngineGameTest"))) {
+				net.minecraft.world.level.storage.TagValueOutput output = net.minecraft.world.level.storage.TagValueOutput.createWithContext(reporter, player.registryAccess());
+				player.saveWithoutId(output);
+				net.minecraft.nbt.CompoundTag stale = output.buildResult();
+				stale.putString("Dimension", "minecraft:the_end");
+				net.minecraft.nbt.ListTag pos = new net.minecraft.nbt.ListTag();
+				pos.add(net.minecraft.nbt.DoubleTag.valueOf(100.5));
+				pos.add(net.minecraft.nbt.DoubleTag.valueOf(80.0));
+				pos.add(net.minecraft.nbt.DoubleTag.valueOf(100.5));
+				stale.put("Pos", pos);
+				java.nio.file.Path dir = s.getWorldPath(net.minecraft.world.level.storage.LevelResource.PLAYER_DATA_DIR);
+				java.nio.file.Files.createDirectories(dir);
+				net.minecraft.nbt.NbtIo.writeCompressed(stale, dir.resolve(foreignOwner + ".dat"));
+			} catch (java.io.IOException e) {
+				failures.add("could not write the stale owner file: " + e);
+			}
+		});
+		String id = UUID.randomUUID().toString();
+		net.minecraft.world.phys.Vec3[] saved = new net.minecraft.world.phys.Vec3[1];
+		server.runOnServer(s -> {
+			try {
+				SavestateEngine.get(s).save(id, "foreign-owner", firstPlayer(s));
+			} catch (SavestateException e) {
+				throw new RuntimeException(e);
+			}
+			saved[0] = firstPlayer(s).position();
+		});
+		server.runCommand("execute in minecraft:overworld run tp @a 12.5 -60 9.5 0 0");
+		context.waitTicks(10);
+		server.runOnServer(s -> {
+			try {
+				SavestateEngine.get(s).restore(id);
+			} catch (SavestateException e) {
+				throw new RuntimeException(e);
+			}
+			ServerPlayer player = firstPlayer(s);
+			check(failures, player.level().dimension() == Level.OVERWORLD, "foreign owner: player restored into " + player.level().dimension().identifier() + " instead of the overworld");
+			check(failures, player.position().equals(saved[0]), "foreign owner: player restored at " + player.position() + " instead of " + saved[0]);
+			SavestateEngine.get(s).delete(id);
+			setRecordedOwner(s, previousOwner[0]);
+		});
+		try {
+			context.waitFor(mc -> mc.level != null && mc.level.dimension() == Level.OVERWORLD && mc.player != null && mc.gui.screen() == null
+					&& mc.player.position().distanceTo(saved[0]) < 0.01, 600);
+		} catch (AssertionError e) {
+			context.runOnClient(mc -> failures.add("foreign owner: client at " + (mc.player == null ? "no player" : mc.player.position() + " in " + mc.level.dimension().identifier()) + " instead of " + saved[0]));
+		}
+	}
+
+	private static void setRecordedOwner(MinecraftServer server, UUID owner) {
+		try {
+			java.lang.reflect.Field field = net.minecraft.world.level.storage.PrimaryLevelData.class.getDeclaredField("singlePlayerUUID");
+			field.setAccessible(true);
+			field.set(server.getWorldData(), owner);
+		} catch (ReflectiveOperationException e) {
+			throw new IllegalStateException(e);
+		}
 	}
 
 	private void runNetherUseCheck(ClientGameTestContext context, TestServerContext server, List<String> failures) {

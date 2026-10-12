@@ -37,6 +37,10 @@ public record TimelineScenario(String name, int ticks, int settleTicks, Consumer
 		return new TimelineScenario(this.name, this.ticks, this.settleTicks, this.setup, this.inputs, dimension, center, radius);
 	}
 
+	public TimelineScenario renamed(String name) {
+		return new TimelineScenario(name, this.ticks, this.settleTicks, this.setup, this.inputs, this.dimension, this.center, this.radius);
+	}
+
 	public TimelineScenario radius(int radius) {
 		return new TimelineScenario(this.name, this.ticks, this.settleTicks, this.setup, this.inputs, this.dimension, this.center, radius);
 	}
